@@ -25,7 +25,7 @@ if 'tickers_map' not in st.session_state:
         'Apple (AAPL)': 'AAPL', 'Qualcomm (QCOM)': 'QCOM', 'ARM (ARM)': 'ARM'
     }
 
-# 트리 데이터 색상 원복 (다양하고 깔끔한 색상)
+# 트리 데이터
 if 'tree_data' not in st.session_state:
     st.session_state.tree_data = {
         "name": "AI 가치사슬 생태계", "itemStyle": {"color": "#0f766e"},
@@ -102,13 +102,71 @@ if 'tree_data' not in st.session_state:
         ]
     }
 
-# 사이드바 (기본 스타일)
+# 트리 노드 재귀 탐색 및 추가 함수 (복구됨!)
+def get_all_node_names(node, names_list):
+    name = node.get("originalName", node.get("name", ""))
+    display_name = name.split('\n')[0]
+    names_list.append(display_name)
+    for child in node.get("children", []):
+        get_all_node_names(child, names_list)
+
+def add_child_to_node(node, parent_display_name, new_child):
+    current_name = node.get("originalName", node.get("name", "")).split('\n')[0]
+    if current_name == parent_display_name:
+        if "children" not in node:
+            node["children"] = []
+        node["children"].append(new_child)
+        return True
+    for child in node.get("children", []):
+        if add_child_to_node(child, parent_display_name, new_child):
+            return True
+    return False
+
+# 사이드바 (종목 검색 및 추가 기능 복구)
 with st.sidebar:
     st.header("⚙️ 모바일 모니터링 설정")
     auto_refresh = st.checkbox("🔄 10초마다 자동 새로고침", value=False)
     if auto_refresh:
         st.success("자동 새로고침 켜짐")
+    
     st.divider()
+
+    # 🚀 신규 기능: 종목 검색 창
+    st.header("🔍 종목 검색 (맵에서 찾기)")
+    search_query = st.text_input("기업명 또는 티커 입력", placeholder="예: NVDA, Apple")
+    
+    st.divider()
+    
+    # 🚀 복구된 기능: 항목 추가
+    st.header("➕ 새 항목 추가")
+    all_nodes = []
+    get_all_node_names(st.session_state.tree_data, all_nodes)
+    parent_node_name = st.selectbox("어느 항목 아래에?", all_nodes)
+    
+    new_node_name = st.text_input("새 항목 이름", placeholder="예: Tesla")
+    new_ticker = st.text_input("티커 (주식인 경우 필수)", placeholder="예: TSLA")
+    
+    if st.button("🚀 트리에 추가하기", use_container_width=True):
+        if new_node_name:
+            is_company = bool(new_ticker.strip())
+            new_child = {
+                "originalName": new_node_name, 
+                "name": new_node_name,
+                "value": 1 if is_company else 0
+            }
+            if not is_company:
+                new_child["itemStyle"] = {"color": "#8b5cf6"}
+            
+            success = add_child_to_node(st.session_state.tree_data, parent_node_name, new_child)
+            
+            if success and is_company:
+                st.session_state.tickers_map[new_node_name] = new_ticker.strip().upper()
+                
+            if success:
+                st.success(f"'{new_node_name}' 추가 완료!")
+                st.rerun()
+        else:
+            st.error("이름을 입력해주세요.")
 
 # 2. 데이터 수집 함수 (듀얼 엔진 장착 - 유지)
 @st.cache_data(ttl=60)
@@ -151,7 +209,7 @@ def get_market_data(tickers_dict):
                         prices = [float(p) for p in hist['Close']]
                         volume = float(hist['Volume'].iloc[-1])
                         
-                        # [핵심] 실시간 데이터 병합 로직 (오늘 날짜 강제 반영)
+                        # 실시간 데이터 병합 로직 (오늘 날짜 강제 반영)
                         if not live_data.empty:
                             if len(tickers_list) > 1:
                                 l_hist = live_data[ticker].dropna()
@@ -189,7 +247,7 @@ def get_market_data(tickers_dict):
 with st.spinner('📡 증시 데이터를 연결하고 있습니다... (Dual Engine)'):
     stock_data, fetch_time = get_market_data(st.session_state.tickers_map)
 
-# 3. 시각화 HTML/JS 템플릿 (깔끔한 테마 원복 + 기능 유지)
+# 3. 시각화 HTML/JS 템플릿 (깔끔한 테마 원복 + 기능 유지 + 검색 하이라이트 추가)
 html_template = """
 <!DOCTYPE html>
 <html>
@@ -249,6 +307,8 @@ html_template = """
 <script>
     const liveData = __LIVE_DATA__;
     const treeData = __TREE_DATA__;
+    const searchQuery = __SEARCH_QUERY__.trim().toLowerCase();
+    
     const chart = echarts.init(document.getElementById('chart'), 'dark');
     const savedPos = JSON.parse(localStorage.getItem('ai_ecosystem_nodes_modern')) || {};
 
@@ -263,7 +323,6 @@ html_template = """
             
             node.symbolSize = Math.max(20, Math.min(50, 15 + (d.volume / 3000000))); 
             
-            // 기존 깔끔한 색상 원복
             let color = '#94a3b8';
             let pStr = d.isKRW ? '₩' + Math.round(d.price).toLocaleString() : '$' + d.price.toFixed(2);
             let cStr = '\\n- 0.00%';
@@ -323,7 +382,7 @@ html_template = """
         series: [{
             type: 'graph', layout: 'force', data: gNodes, links: gLinks, roam: true, draggable: true,
             scaleLimit: { min: 0.1, max: 20 },
-            // 🚨 둥둥 떠다니기 고정 (layoutAnimation: false) 및 겹침 방지(4000) 유지
+            // 둥둥 떠다니기 고정 및 겹침 방지(4000) 유지
             force: { repulsion: 4000, edgeLength: [80, 200], gravity: 0.05, layoutAnimation: false }, 
             label: { show: true, position: 'bottom', fontSize: 10, formatter: p => p.data.originalName.split('\\n')[0], color: '#f8fafc' },
             zoom: 1
@@ -331,6 +390,23 @@ html_template = """
     };
 
     chart.setOption(graphOpt);
+
+    // 🚀 종목 검색 하이라이트 로직
+    if (searchQuery) {
+        let matchedNode = null;
+        for (let i = 0; i < gNodes.length; i++) {
+            if (gNodes[i].originalName.toLowerCase().includes(searchQuery)) {
+                matchedNode = gNodes[i];
+                break;
+            }
+        }
+        if (matchedNode) {
+            setTimeout(() => {
+                chart.dispatchAction({ type: 'highlight', name: matchedNode.name });
+                chart.dispatchAction({ type: 'showTip', name: matchedNode.name });
+            }, 500);
+        }
+    }
 
     function savePositions() {
         const layoutData = chart.getModel().getSeriesByIndex(0).getData();
@@ -349,7 +425,7 @@ html_template = """
         chart.setOption({ series: [{ center: null, zoom: 1 }] });
     };
     
-    // 배치 초기화 (localStorage 이름 변경으로 꼬임 방지)
+    // 배치 초기화
     document.getElementById('resetPos').onclick = () => { localStorage.removeItem('ai_ecosystem_nodes_modern'); location.reload(); };
 
     const modal = document.getElementById('chart-modal');
@@ -369,7 +445,6 @@ html_template = """
 
         if (!stockChartInstance) stockChartInstance = echarts.init(document.getElementById('stock-chart'), 'dark');
         
-        // 차트 디자인 기존 부드러운 스타일로 원복
         stockChartInstance.setOption({
             backgroundColor: 'transparent',
             tooltip: { trigger: 'axis', confine: true, formatter: p => `${p[0].name}<br/><b>${data.isKRW ? '₩'+Math.round(p[0].value).toLocaleString() : '$'+p[0].value.toFixed(2)}</b>` },
@@ -393,7 +468,12 @@ html_template = """
 </html>
 """
 
-components.html(html_template.replace("__LIVE_DATA__", json.dumps(stock_data)).replace("__TREE_DATA__", json.dumps(st.session_state.tree_data)).replace("__UPDATE_TIME__", fetch_time), height=900)
+final_html = html_template.replace("__LIVE_DATA__", json.dumps(stock_data)) \
+                          .replace("__TREE_DATA__", json.dumps(st.session_state.tree_data)) \
+                          .replace("__UPDATE_TIME__", fetch_time) \
+                          .replace("__SEARCH_QUERY__", json.dumps(search_query))
+
+components.html(final_html, height=900)
 
 if auto_refresh:
     time.sleep(10)
