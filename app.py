@@ -10,7 +10,7 @@ import time
 st.set_page_config(layout="wide", page_title="AI 실시간 생태계 맵", page_icon="📱")
 
 st.title("📱 AI 산업 실시간 주가 대시보드 (Galaxy S26 Ultra 최적화)")
-st.info("SYS_MSG: 원 위치 고정, 오늘 데이터, 검색, 3초 꾹 눌러 삭제 기능이 탑재되었습니다.")
+st.info("SYS_MSG: 원 위치 고정, 실시간 타이핑 검색, 3초 꾹 눌러 삭제 기능이 탑재되었습니다.")
 
 # ==========================================
 # 세션 상태(Session State) 초기화
@@ -123,18 +123,12 @@ def add_child_to_node(node, parent_display_name, new_child):
             return True
     return False
 
-# 사이드바 (종목 검색 및 추가 기능)
+# 사이드바 (종목 추가 기능 유지, 검색 기능은 JS 실시간 처리로 맵 내부로 이동)
 with st.sidebar:
     st.header("⚙️ 모바일 모니터링 설정")
     auto_refresh = st.checkbox("🔄 10초마다 자동 새로고침", value=False)
     if auto_refresh:
         st.success("자동 새로고침 켜짐")
-    
-    st.divider()
-
-    # 🚀 신규 기능: 종목 검색 창 (부분 일치 지원)
-    st.header("🔍 종목 검색 (맵에서 찾기)")
-    search_query = st.text_input("기업명 또는 티커 (일부분만 입력해도 됨)", placeholder="예: 하이, NVDA")
     
     st.divider()
     
@@ -272,8 +266,17 @@ html_template = """
         
         .controls { 
             position: absolute; top: 10px; left: 10px; right: 10px; z-index: 10; 
-            display: flex; flex-wrap: wrap; gap: 5px; 
+            display: flex; flex-wrap: wrap; gap: 5px; align-items: center;
         }
+        
+        /* 🚀 실시간 검색창 스타일 */
+        .live-search-input {
+            flex-grow: 2; padding: 8px 10px; font-size: 13px;
+            background-color: #1e293b; color: #f8fafc; border: 1px solid #475569;
+            border-radius: 6px; outline: none; transition: border-color 0.2s;
+        }
+        .live-search-input:focus { border-color: #3b82f6; }
+        
         .controls button { 
             padding: 8px 10px; font-size: 12px; flex-grow: 1; text-align: center;
         }
@@ -292,8 +295,10 @@ html_template = """
 </head>
 <body>
     <div class="controls">
-        <button id="centerGraph" class="bg-blue-600 hover:bg-blue-500 text-white rounded shadow font-bold transition-colors w-full">🎯 네트워크 중앙 정렬</button>
-        <button id="resetPos" class="bg-slate-700 hover:bg-slate-600 text-white rounded shadow transition-colors w-full mt-1">🔄 맵 및 삭제 복구 초기화 (처음 1회 클릭)</button>
+        <!-- 🚀 실시간 반응형 검색창 추가 -->
+        <input type="text" id="liveSearch" class="live-search-input w-full md:w-auto mb-1" placeholder="🔍 실시간 종목 검색 (예: 하이, NVDA)">
+        <button id="centerGraph" class="bg-blue-600 hover:bg-blue-500 text-white rounded shadow font-bold transition-colors w-full md:w-auto">🎯 중앙 정렬</button>
+        <button id="resetPos" class="bg-slate-700 hover:bg-slate-600 text-white rounded shadow transition-colors w-full md:w-auto">🔄 맵 초기화</button>
     </div>
     
     <div class="update-time" id="update-time-display">⏱️ 연동 중...</div>
@@ -317,15 +322,13 @@ html_template = """
 <script>
     const liveData = __LIVE_DATA__;
     const treeData = __TREE_DATA__;
-    const searchQuery = __SEARCH_QUERY__.trim().toLowerCase();
     
     const chart = echarts.init(document.getElementById('chart'), 'dark');
     const savedPos = JSON.parse(localStorage.getItem('ai_ecosystem_nodes_modern')) || {};
-    const deletedNodes = JSON.parse(localStorage.getItem('ai_ecosystem_deleted_nodes')) || []; // 삭제된 항목 불러오기
+    const deletedNodes = JSON.parse(localStorage.getItem('ai_ecosystem_deleted_nodes')) || []; 
 
     document.getElementById('update-time-display').innerText = '⏱️ __UPDATE_TIME__ (KST)';
 
-    // 🚨 렌더링 전 삭제된 항목 걸러내기
     function filterDeletedNodes(node) {
         if (node.children) {
             node.children = node.children.filter(c => !deletedNodes.includes(c.originalName || c.name));
@@ -335,7 +338,6 @@ html_template = """
     filterDeletedNodes(treeData);
 
     function process(node) {
-        // 🚨 버그 수정: 노드에 이름(originalName)이 없는 경우를 대비한 방어 코드
         node.originalName = node.originalName || node.name;
         node.id = node.originalName;
         
@@ -360,20 +362,6 @@ html_template = """
             node.symbolSize = node.children ? 14 : 10; 
             node.label = { color: '#f8fafc', fontSize: 10, fontWeight: 'normal' };
         }
-
-        // 🌟 부분 검색 & 하이라이트 효과 (노란색 강력한 네온사인 🌟)
-        if (searchQuery && node.originalName.toLowerCase().includes(searchQuery)) {
-            node.itemStyle = { 
-                color: '#fef08a',         // 밝은 옐로우 
-                borderColor: '#eab308',   // 짙은 옐로우 테두리
-                borderWidth: 4, 
-                shadowBlur: 30,           // 네온사인 후광 효과
-                shadowColor: '#fde047'    // 후광 색상
-            };
-            node.symbolSize = (node.symbolSize || 20) * 1.6; // 크기 1.6배 뻥튀기!
-            node.label = { color: '#fde047', fontSize: 14, fontWeight: 'bold' }; // 글씨도 노랗고 굵게!
-        }
-
         if (node.children) node.children.forEach(process);
     }
     process(treeData);
@@ -404,10 +392,15 @@ html_template = """
             value: node.value, rawData: node.rawData 
         };
         
-        // 커스텀 라벨이 지정되어 있다면 적용 (노란색 강조 폰트 포함)
+        // 🚀 실시간 복원을 위해 원본 스타일 저장
+        nData.originalItemStyle = { ...node.itemStyle };
+        nData.originalSymbolSize = nData.symbolSize;
+        nData.originalLabel = { ...node.label };
+        
         if (node.label) {
-            nData.label = node.label;
+            nData.label = { ...node.label };
             nData.label.formatter = p => p.data.originalName.split('\\n')[0];
+            nData.originalLabel.formatter = nData.label.formatter; // formatter 유지
         }
         
         if (savedPos[node.id]) {
@@ -428,12 +421,52 @@ html_template = """
             type: 'graph', layout: 'force', data: gNodes, links: gLinks, roam: true, draggable: true,
             scaleLimit: { min: 0.1, max: 20 },
             force: { repulsion: 4000, edgeLength: [80, 200], gravity: 0.05, layoutAnimation: false }, 
-            label: { show: true, position: 'bottom' }, // 디자인은 노드별 개별 설정(nData.label)을 따름
+            label: { show: true, position: 'bottom' }, 
             zoom: 1
         }]
     };
 
     chart.setOption(graphOpt);
+
+    // 🚀 타이핑 즉시 반응하는 실시간 검색 로직
+    document.getElementById('liveSearch').addEventListener('input', function(e) {
+        const query = e.target.value.trim().toLowerCase();
+        let matchedIndex = -1;
+
+        gNodes.forEach((node, i) => {
+            // 1. 모든 노드 디자인을 원래대로 초기화
+            node.itemStyle = { ...node.originalItemStyle };
+            node.symbolSize = node.originalSymbolSize;
+            node.label = { ...node.originalLabel };
+
+            // 2. 검색어와 일치하는 부분(단어 1개라도)이 있으면 네온사인 발동
+            if (query && node.originalName.toLowerCase().includes(query)) {
+                node.itemStyle = { 
+                    color: '#fef08a',         
+                    borderColor: '#eab308',   
+                    borderWidth: 4, 
+                    shadowBlur: 30,           
+                    shadowColor: '#fde047'    
+                };
+                node.symbolSize = node.originalSymbolSize * 1.6;
+                node.label = { color: '#fde047', fontSize: 14, fontWeight: 'bold', formatter: node.originalLabel.formatter };
+                
+                if (matchedIndex === -1) matchedIndex = i;
+            }
+        });
+
+        // 3. 맵 화면 즉시 재렌더링
+        chart.setOption({ series: [{ data: gNodes }] });
+
+        // 4. 찾은 항목에 툴팁 팝업 자동으로 띄우기
+        if (matchedIndex !== -1) {
+            setTimeout(() => {
+                chart.dispatchAction({ type: 'showTip', seriesIndex: 0, dataIndex: matchedIndex });
+            }, 50);
+        } else {
+            chart.dispatchAction({ type: 'hideTip' });
+        }
+    });
 
     // 🚀 3초 꾹 누르기 (삭제 기능)
     let holdTimer = null;
@@ -450,35 +483,17 @@ html_template = """
                         deleted.push(holdTarget);
                         localStorage.setItem('ai_ecosystem_deleted_nodes', JSON.stringify(deleted));
                     }
-                    location.reload(); // 즉시 새로고침하여 삭제 반영
+                    location.reload(); 
                 }
-            }, 3000); // 3초
+            }, 3000); 
         }
     });
 
-    // 드래그, 이동, 줌 등 동작 발생 시 타이머 취소 (오작동 방지)
     chart.on('mouseup', function () { clearTimeout(holdTimer); holdTarget = null; });
     chart.on('mousemove', function () { clearTimeout(holdTimer); holdTarget = null; });
     chart.on('globalout', function () { clearTimeout(holdTimer); holdTarget = null; });
     chart.on('dataZoom', function () { clearTimeout(holdTimer); holdTarget = null; });
     chart.on('graphRoam', function () { clearTimeout(holdTimer); holdTarget = null; });
-
-    // 🚀 종목 검색 하이라이트 안전 코드 적용 (오류 없이 완벽하게 작동)
-    if (searchQuery) {
-        let matchedIndex = -1;
-        for (let i = 0; i < gNodes.length; i++) {
-            if (gNodes[i].originalName.toLowerCase().includes(searchQuery)) {
-                matchedIndex = i;
-                break;
-            }
-        }
-        if (matchedIndex !== -1) {
-            setTimeout(() => {
-                chart.dispatchAction({ type: 'highlight', seriesIndex: 0, dataIndex: matchedIndex });
-                chart.dispatchAction({ type: 'showTip', seriesIndex: 0, dataIndex: matchedIndex });
-            }, 500);
-        }
-    }
 
     function savePositions() {
         const layoutData = chart.getModel().getSeriesByIndex(0).getData();
@@ -492,15 +507,13 @@ html_template = """
 
     chart.on('mouseup', function() { savePositions(); });
 
-    // 중앙 정렬 버튼
     document.getElementById('centerGraph').onclick = () => {
         chart.setOption({ series: [{ center: null, zoom: 1 }] });
     };
     
-    // 배치 및 삭제 기록 초기화
     document.getElementById('resetPos').onclick = () => { 
         localStorage.removeItem('ai_ecosystem_nodes_modern'); 
-        localStorage.removeItem('ai_ecosystem_deleted_nodes'); // 삭제 항목까지 모두 복구
+        localStorage.removeItem('ai_ecosystem_deleted_nodes'); 
         location.reload(); 
     };
 
@@ -546,8 +559,7 @@ html_template = """
 
 final_html = html_template.replace("__LIVE_DATA__", json.dumps(stock_data)) \
                           .replace("__TREE_DATA__", json.dumps(st.session_state.tree_data)) \
-                          .replace("__UPDATE_TIME__", fetch_time) \
-                          .replace("__SEARCH_QUERY__", json.dumps(search_query))
+                          .replace("__UPDATE_TIME__", fetch_time)
 
 components.html(final_html, height=900)
 
