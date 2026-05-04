@@ -5,12 +5,14 @@ import pandas as pd
 import streamlit.components.v1 as components
 from datetime import datetime, timezone, timedelta
 import time
+import urllib.request
+import urllib.parse
 
 # 1. 앱 페이지 설정 (깔끔한 모던 스타일 복구)
 st.set_page_config(layout="wide", page_title="AI 실시간 생태계 맵", page_icon="📱")
 
 st.title("📱 AI 산업 실시간 주가 대시보드 (Galaxy S26 Ultra 최적화)")
-st.info("SYS_MSG: 원 위치 고정, 실시간 타이핑 검색, 3초 꾹 눌러 삭제 기능이 탑재되었습니다.")
+st.info("SYS_MSG: 원 위치 고정, 실시간 타이핑 검색, 자동 티커 찾기 기능이 탑재되었습니다.")
 
 # ==========================================
 # 세션 상태(Session State) 초기화
@@ -123,7 +125,7 @@ def add_child_to_node(node, parent_display_name, new_child):
             return True
     return False
 
-# 사이드바 (종목 추가 기능 유지, 검색 기능은 JS 실시간 처리로 맵 내부로 이동)
+# 사이드바 (종목 추가 및 🚀 자동 티커 찾기 기능)
 with st.sidebar:
     st.header("⚙️ 모바일 모니터링 설정")
     auto_refresh = st.checkbox("🔄 10초마다 자동 새로고침", value=False)
@@ -138,12 +140,44 @@ with st.sidebar:
     get_all_node_names(st.session_state.tree_data, all_nodes)
     parent_node_name = st.selectbox("어느 항목 아래에?", all_nodes)
     
-    new_node_name = st.text_input("새 항목 이름", placeholder="예: Tesla")
-    new_ticker = st.text_input("티커 (주식인 경우 필수)", placeholder="예: TSLA")
+    new_node_name = st.text_input("새 항목 이름", placeholder="예: Tesla, 카카오")
+    
+    # 🚀 마법의 티커 자동 찾기 UI
+    c1, c2 = st.columns([7, 3])
+    with c1:
+        if 'auto_ticker' not in st.session_state:
+            st.session_state.auto_ticker = ""
+        new_ticker = st.text_input("티커", key='auto_ticker', placeholder="비워두면 그룹(섹터) 생성")
+    with c2:
+        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+        if st.button("🔍 찾기", use_container_width=True):
+            if new_node_name:
+                try:
+                    # 야후 파이낸스 검색 API 찌르기
+                    url = f"https://query2.finance.yahoo.com/v1/finance/search?q={urllib.parse.quote(new_node_name)}"
+                    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                    with urllib.request.urlopen(req, timeout=3) as response:
+                        data = json.loads(response.read().decode('utf-8'))
+                        if data.get('quotes') and len(data['quotes']) > 0:
+                            ticker = data['quotes'][0]['symbol']
+                            for q in data['quotes']:
+                                if q.get('quoteType') == 'EQUITY':
+                                    ticker = q['symbol']
+                                    break
+                            # 찾은 티커를 빈칸에 쏙 집어넣음
+                            st.session_state.auto_ticker = ticker
+                            st.rerun()
+                        else:
+                            st.warning("결과 없음")
+                except:
+                    st.warning("오류 발생")
+            else:
+                st.warning("이름 입력")
     
     if st.button("🚀 트리에 추가하기", use_container_width=True):
         if new_node_name:
-            is_company = bool(new_ticker.strip())
+            final_ticker = st.session_state.auto_ticker.strip()
+            is_company = bool(final_ticker)
             new_child = {
                 "originalName": new_node_name, 
                 "name": new_node_name,
@@ -155,9 +189,10 @@ with st.sidebar:
             success = add_child_to_node(st.session_state.tree_data, parent_node_name, new_child)
             
             if success and is_company:
-                st.session_state.tickers_map[new_node_name] = new_ticker.strip().upper()
+                st.session_state.tickers_map[new_node_name] = final_ticker.upper()
                 
             if success:
+                st.session_state.auto_ticker = "" # 추가 완료 시 칸 비우기
                 st.success(f"'{new_node_name}' 추가 완료!")
                 st.rerun()
         else:
@@ -295,7 +330,6 @@ html_template = """
 </head>
 <body>
     <div class="controls">
-        <!-- 🚀 실시간 반응형 검색창 추가 -->
         <input type="text" id="liveSearch" class="live-search-input w-full md:w-auto mb-1" placeholder="🔍 실시간 종목 검색 (예: 하이, NVDA)">
         <button id="centerGraph" class="bg-blue-600 hover:bg-blue-500 text-white rounded shadow font-bold transition-colors w-full md:w-auto">🎯 중앙 정렬</button>
         <button id="resetPos" class="bg-slate-700 hover:bg-slate-600 text-white rounded shadow transition-colors w-full md:w-auto">🔄 맵 초기화</button>
@@ -392,7 +426,6 @@ html_template = """
             value: node.value, rawData: node.rawData 
         };
         
-        // 🚀 실시간 복원을 위해 원본 스타일 저장
         nData.originalItemStyle = { ...node.itemStyle };
         nData.originalSymbolSize = nData.symbolSize;
         nData.originalLabel = { ...node.label };
@@ -400,7 +433,7 @@ html_template = """
         if (node.label) {
             nData.label = { ...node.label };
             nData.label.formatter = p => p.data.originalName.split('\\n')[0];
-            nData.originalLabel.formatter = nData.label.formatter; // formatter 유지
+            nData.originalLabel.formatter = nData.label.formatter; 
         }
         
         if (savedPos[node.id]) {
@@ -428,18 +461,15 @@ html_template = """
 
     chart.setOption(graphOpt);
 
-    // 🚀 타이핑 즉시 반응하는 실시간 검색 로직
     document.getElementById('liveSearch').addEventListener('input', function(e) {
         const query = e.target.value.trim().toLowerCase();
         let matchedIndex = -1;
 
         gNodes.forEach((node, i) => {
-            // 1. 모든 노드 디자인을 원래대로 초기화
             node.itemStyle = { ...node.originalItemStyle };
             node.symbolSize = node.originalSymbolSize;
             node.label = { ...node.originalLabel };
 
-            // 2. 검색어와 일치하는 부분(단어 1개라도)이 있으면 네온사인 발동
             if (query && node.originalName.toLowerCase().includes(query)) {
                 node.itemStyle = { 
                     color: '#fef08a',         
@@ -455,10 +485,8 @@ html_template = """
             }
         });
 
-        // 3. 맵 화면 즉시 재렌더링
         chart.setOption({ series: [{ data: gNodes }] });
 
-        // 4. 찾은 항목에 툴팁 팝업 자동으로 띄우기
         if (matchedIndex !== -1) {
             setTimeout(() => {
                 chart.dispatchAction({ type: 'showTip', seriesIndex: 0, dataIndex: matchedIndex });
@@ -468,7 +496,6 @@ html_template = """
         }
     });
 
-    // 🚀 3초 꾹 누르기 (삭제 기능)
     let holdTimer = null;
     let holdTarget = null;
 
