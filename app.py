@@ -10,7 +10,7 @@ import time
 st.set_page_config(layout="wide", page_title="AI 실시간 생태계 맵", page_icon="📱")
 
 st.title("📱 AI 산업 실시간 주가 대시보드 (Galaxy S26 Ultra 최적화)")
-st.info("SYS_MSG: 원 위치 고정 및 오늘(Live) 데이터 연동이 적용된 깔끔한 버전입니다.")
+st.info("SYS_MSG: 원 위치 고정, 오늘 데이터, 검색, 3초 꾹 눌러 삭제 기능이 탑재되었습니다.")
 
 # ==========================================
 # 세션 상태(Session State) 초기화
@@ -293,7 +293,7 @@ html_template = """
 <body>
     <div class="controls">
         <button id="centerGraph" class="bg-blue-600 hover:bg-blue-500 text-white rounded shadow font-bold transition-colors w-full">🎯 네트워크 중앙 정렬</button>
-        <button id="resetPos" class="bg-slate-700 hover:bg-slate-600 text-white rounded shadow transition-colors w-full mt-1">🔄 맵 초기화 (처음 1회 클릭)</button>
+        <button id="resetPos" class="bg-slate-700 hover:bg-slate-600 text-white rounded shadow transition-colors w-full mt-1">🔄 맵 및 삭제 복구 초기화 (처음 1회 클릭)</button>
     </div>
     
     <div class="update-time" id="update-time-display">⏱️ 연동 중...</div>
@@ -321,11 +321,24 @@ html_template = """
     
     const chart = echarts.init(document.getElementById('chart'), 'dark');
     const savedPos = JSON.parse(localStorage.getItem('ai_ecosystem_nodes_modern')) || {};
+    const deletedNodes = JSON.parse(localStorage.getItem('ai_ecosystem_deleted_nodes')) || []; // 삭제된 항목 불러오기
 
     document.getElementById('update-time-display').innerText = '⏱️ __UPDATE_TIME__ (KST)';
 
+    // 🚨 렌더링 전 삭제된 항목 걸러내기
+    function filterDeletedNodes(node) {
+        if (node.children) {
+            node.children = node.children.filter(c => !deletedNodes.includes(c.originalName || c.name));
+            node.children.forEach(filterDeletedNodes);
+        }
+    }
+    filterDeletedNodes(treeData);
+
     function process(node) {
-        node.id = node.originalName || node.name;
+        // 🚨 버그 수정: 노드에 이름(originalName)이 없는 경우를 대비한 방어 코드
+        node.originalName = node.originalName || node.name;
+        node.id = node.originalName;
+        
         if (node.value !== undefined && node.value !== 0 && liveData[node.originalName]) {
             const d = liveData[node.originalName];
             node.rawData = d; 
@@ -422,18 +435,47 @@ html_template = """
 
     chart.setOption(graphOpt);
 
-    // 🚀 종목 검색 하이라이트 (툴팁 자동 오픈 기능 유지)
+    // 🚀 3초 꾹 누르기 (삭제 기능)
+    let holdTimer = null;
+    let holdTarget = null;
+
+    chart.on('mousedown', function (params) {
+        if (params.data && params.data.originalName) {
+            holdTarget = params.data.originalName;
+            holdTimer = setTimeout(() => {
+                let displayName = holdTarget.split('\\n')[0];
+                if (confirm(`[ ${displayName} ] 항목을 완전히 삭제하시겠습니까?`)) {
+                    let deleted = JSON.parse(localStorage.getItem('ai_ecosystem_deleted_nodes')) || [];
+                    if (!deleted.includes(holdTarget)) {
+                        deleted.push(holdTarget);
+                        localStorage.setItem('ai_ecosystem_deleted_nodes', JSON.stringify(deleted));
+                    }
+                    location.reload(); // 즉시 새로고침하여 삭제 반영
+                }
+            }, 3000); // 3초
+        }
+    });
+
+    // 드래그, 이동, 줌 등 동작 발생 시 타이머 취소 (오작동 방지)
+    chart.on('mouseup', function () { clearTimeout(holdTimer); holdTarget = null; });
+    chart.on('mousemove', function () { clearTimeout(holdTimer); holdTarget = null; });
+    chart.on('globalout', function () { clearTimeout(holdTimer); holdTarget = null; });
+    chart.on('dataZoom', function () { clearTimeout(holdTimer); holdTarget = null; });
+    chart.on('graphRoam', function () { clearTimeout(holdTimer); holdTarget = null; });
+
+    // 🚀 종목 검색 하이라이트 안전 코드 적용 (오류 없이 완벽하게 작동)
     if (searchQuery) {
-        let matchedNode = null;
+        let matchedIndex = -1;
         for (let i = 0; i < gNodes.length; i++) {
             if (gNodes[i].originalName.toLowerCase().includes(searchQuery)) {
-                matchedNode = gNodes[i];
+                matchedIndex = i;
                 break;
             }
         }
-        if (matchedNode) {
+        if (matchedIndex !== -1) {
             setTimeout(() => {
-                chart.dispatchAction({ type: 'showTip', name: matchedNode.name });
+                chart.dispatchAction({ type: 'highlight', seriesIndex: 0, dataIndex: matchedIndex });
+                chart.dispatchAction({ type: 'showTip', seriesIndex: 0, dataIndex: matchedIndex });
             }, 500);
         }
     }
@@ -455,8 +497,12 @@ html_template = """
         chart.setOption({ series: [{ center: null, zoom: 1 }] });
     };
     
-    // 배치 초기화
-    document.getElementById('resetPos').onclick = () => { localStorage.removeItem('ai_ecosystem_nodes_modern'); location.reload(); };
+    // 배치 및 삭제 기록 초기화
+    document.getElementById('resetPos').onclick = () => { 
+        localStorage.removeItem('ai_ecosystem_nodes_modern'); 
+        localStorage.removeItem('ai_ecosystem_deleted_nodes'); // 삭제 항목까지 모두 복구
+        location.reload(); 
+    };
 
     const modal = document.getElementById('chart-modal');
     let stockChartInstance = null;
