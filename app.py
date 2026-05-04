@@ -168,83 +168,78 @@ with st.sidebar:
         else:
             st.error("이름을 입력해주세요.")
 
-# 2. 데이터 수집 함수 (듀얼 엔진 장착 - 유지)
+# 2. 데이터 수집 함수 (퀀텀 스나이퍼 엔진 장착)
 @st.cache_data(ttl=60)
 def get_market_data(tickers_dict):
     results = {}
     kst = timezone(timedelta(hours=9)) # 한국 시간(KST) 세팅
     fetch_time = datetime.now(kst).strftime('%H:%M:%S')
-    
-    mock_dates = [f"D-{i}" for i in range(120, 0, -1)] + ["Today"]
-    mock_history = [100.0] * 121
-    
-    for name in tickers_dict.keys():
-        results[name] = {
-            "price": 100.0, "change": 0.0, "volume": 1000000, 
-            "isKRW": False, "isMock": True, "dates": mock_dates, "history": mock_history
-        }
 
     try:
+        # 1. 과거 차트(6개월) 데이터 일괄 다운로드 (시간 절약)
         tickers_list = list(tickers_dict.values())
-        
-        # 1. 6개월치 일봉 데이터 수집
         all_data = yf.download(tickers_list, period="6mo", interval="1d", group_by='ticker', auto_adjust=True, progress=False, timeout=10)
-        
-        # 2. 오늘자 실시간 분봉 데이터 수집 (지연 방어 및 현재가 확보용)
-        try:
-            live_data = yf.download(tickers_list, period="1d", interval="5m", group_by='ticker', auto_adjust=True, progress=False, timeout=10)
-        except:
-            live_data = pd.DataFrame()
-            
-        if not all_data.empty:
-            for name, ticker in tickers_dict.items():
-                try:
-                    if len(tickers_list) > 1:
-                        hist = all_data[ticker].dropna()
-                    else:
-                        hist = all_data.dropna()
-                    
-                    if len(hist) >= 1:
-                        dates = [d.strftime('%m-%d') for d in hist.index]
-                        prices = [float(p) for p in hist['Close']]
-                        volume = float(hist['Volume'].iloc[-1])
-                        
-                        # 실시간 데이터 병합 로직 (오늘 날짜 강제 반영)
-                        if not live_data.empty:
-                            if len(tickers_list) > 1:
-                                l_hist = live_data[ticker].dropna()
-                            else:
-                                l_hist = live_data.dropna()
-                                
-                            if not l_hist.empty:
-                                live_price = float(l_hist['Close'].iloc[-1])
-                                today_str = datetime.now(kst).strftime('%m-%d')
-                                
-                                if dates[-1] != today_str:
-                                    dates.append(f"{today_str} (Live)")
-                                    prices.append(live_price)
-                                else:
-                                    dates[-1] = f"{today_str} (Live)"
-                                    prices[-1] = live_price
+    except:
+        all_data = pd.DataFrame()
 
-                        current = prices[-1]
-                        prev = prices[-2] if len(prices) > 1 else current
-                        change = ((current - prev) / prev) * 100 if prev != 0 else 0.0
-                        
-                        results[name] = {
-                            "price": current, "change": change, 
-                            "volume": volume, "isKRW": ".KS" in ticker or ".KQ" in ticker,
-                            "isMock": False, "dates": dates, "history": prices
-                        }
-                except Exception as e:
-                    continue
-    except Exception as e:
-        pass
-        
+    # 2. [강력한 실시간 엔진] fast_info로 '절대 최신(Live)' 호가창 가격을 1:1 저격
+    for name, ticker in tickers_dict.items():
+        try:
+            t = yf.Ticker(ticker)
+            # fast_info는 과거 차트가 덜 만들어졌더라도, 현재 거래소에서 체결되는 가장 최신 가격을 즉시 가져옵니다.
+            live_price = float(t.fast_info.last_price)
+            prev_close = float(t.fast_info.previous_close)
+            volume = float(t.fast_info.last_volume)
+            change = ((live_price - prev_close) / prev_close) * 100 if prev_close else 0.0
+
+            dates = []
+            prices = []
+            
+            # 과거 차트 데이터 추출
+            if not all_data.empty:
+                if len(tickers_list) > 1 and ticker in all_data:
+                    hist = all_data[ticker].dropna()
+                elif len(tickers_list) == 1:
+                    hist = all_data.dropna()
+                else:
+                    hist = pd.DataFrame()
+                    
+                if not hist.empty:
+                    dates = [d.strftime('%m-%d') for d in hist.index]
+                    prices = [float(p) for p in hist['Close']]
+            
+            # 실시간 가격을 차트 마지막에 강제 주입!
+            if len(prices) > 0:
+                today_str = datetime.now(kst).strftime('%m-%d')
+                # 만약 차트의 마지막 가격이 현재 라이브 가격과 다르면 (야후 서버가 아직 차트 업데이트를 안 했다면)
+                if abs(prices[-1] - live_price) > (live_price * 0.001): 
+                    dates.append(f"{today_str} (Live)")
+                    prices.append(live_price)
+                else:
+                    # 이미 반영되어 있다면 태그만 추가
+                    dates[-1] = f"{today_str} (Live)"
+                    prices[-1] = live_price
+            else:
+                dates = ["Live"]
+                prices = [live_price]
+
+            results[name] = {
+                "price": live_price, 
+                "change": change, 
+                "volume": volume, 
+                "isKRW": ".KS" in ticker or ".KQ" in ticker,
+                "isMock": False, 
+                "dates": dates, 
+                "history": prices
+            }
+        except Exception as e:
+            # 데이터 수집 실패 시 빈 데이터 방지
+            results[name] = {"price": 100.0, "change": 0.0, "volume": 0, "isKRW": False, "isMock": True, "dates": ["Error"], "history": [100.0]}
+            
     return results, fetch_time
 
 # 데이터 불러오기
-with st.spinner('📡 증시 데이터를 연결하고 있습니다... (Dual Engine)'):
+with st.spinner('📡 퀀텀 엔진으로 실시간 가격을 추적 중입니다...'):
     stock_data, fetch_time = get_market_data(st.session_state.tickers_map)
 
 # 3. 시각화 HTML/JS 템플릿 (깔끔한 테마 원복 + 기능 유지 + 검색 하이라이트 추가)
