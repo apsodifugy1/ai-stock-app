@@ -218,7 +218,7 @@ def get_market_data(tickers_dict):
 with st.spinner('📡 증시 데이터를 연결하고 있습니다... (Rate Limit 회피 중)'):
     stock_data, fetch_time = get_market_data(st.session_state.tickers_map)
 
-# 3. 시각화 HTML/JS 템플릿
+# 3. 시각화 HTML/JS 템플릿 (침범 방지 & 줌 민감도 개선)
 html_template = """
 <!DOCTYPE html>
 <html>
@@ -294,7 +294,8 @@ html_template = """
             node.rawData = d; 
             node.value = d.price; 
             
-            node.symbolSize = Math.max(25, Math.min(60, 20 + (d.volume / 2000000))); 
+            // 모바일 화면에 맞게 기본 크기를 조금 줄여 겹침 방지 보조
+            node.symbolSize = Math.max(22, Math.min(55, 18 + (d.volume / 2000000))); 
             let color = '#94a3b8';
             let pStr = d.isKRW ? '₩' + Math.round(d.price).toLocaleString() : '$' + d.price.toFixed(2);
             let cStr = '\\n- 0.00%';
@@ -305,7 +306,7 @@ html_template = """
             node.name = node.originalName + '\\n' + pStr + cStr;
             node.itemStyle = { color: color, borderColor: color };
         } else { 
-            node.symbolSize = node.children ? 15 : 10; 
+            node.symbolSize = node.children ? 14 : 10; 
         }
         if (node.children) node.children.forEach(process);
     }
@@ -354,7 +355,8 @@ html_template = """
         series: [{
             type: 'graph', layout: 'force', data: gNodes, links: gLinks, roam: true, draggable: true,
             scaleLimit: { min: 0.1, max: 20 },
-            force: { repulsion: 1000, edgeLength: [40, 150], layoutAnimation: true }, 
+            // 🚨 원 침범 방지 핵심 코드: 척력(repulsion)을 2500으로 올려서 강력하게 밀어내게 만듦
+            force: { repulsion: 2500, edgeLength: [60, 180], gravity: 0.1, layoutAnimation: true }, 
             label: { show: true, position: 'bottom', fontSize: 10, formatter: p => p.data.originalName.split('\\n')[0], color: '#f8fafc' }
         }]
     };
@@ -385,9 +387,10 @@ html_template = """
     chart.on('mouseup', function() { setTimeout(savePositions, 500); });
     setTimeout(savePositions, 2000);
 
+    // 🚨 줌 민감도 수정: 기존 1.4배씩 커지던 것을 1.2배씩 부드럽게 커지도록 완화
     let currentZoom = 1;
-    document.getElementById('zoomIn').onclick = () => { currentZoom *= 1.4; chart.setOption({ series: [{ zoom: currentZoom }] }); };
-    document.getElementById('zoomOut').onclick = () => { currentZoom /= 1.4; chart.setOption({ series: [{ zoom: currentZoom }] }); };
+    document.getElementById('zoomIn').onclick = () => { currentZoom *= 1.2; chart.setOption({ series: [{ zoom: currentZoom }] }); };
+    document.getElementById('zoomOut').onclick = () => { currentZoom /= 1.2; chart.setOption({ series: [{ zoom: currentZoom }] }); };
     document.getElementById('resetPos').onclick = () => { localStorage.removeItem('ai_ecosystem_nodes_pos'); location.reload(); };
 
     document.getElementById('toTree').onclick = () => { 
