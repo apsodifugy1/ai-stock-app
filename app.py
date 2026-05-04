@@ -161,7 +161,6 @@ with st.sidebar:
             st.error("이름을 입력해주세요.")
 
 # 2. 데이터 수집 함수 (6개월 데이터)
-# 야후 파이낸스 Rate Limit 방지를 위해 실제 데이터 통신 주기는 60초로 상향 조정합니다.
 @st.cache_data(ttl=60)
 def get_market_data(tickers_dict):
     results = {}
@@ -219,7 +218,7 @@ def get_market_data(tickers_dict):
 with st.spinner('📡 증시 데이터를 연결하고 있습니다... (Rate Limit 회피 중)'):
     stock_data, fetch_time = get_market_data(st.session_state.tickers_map)
 
-# 3. 시각화 HTML/JS 템플릿 (모바일 반응형 완벽 적용)
+# 3. 시각화 HTML/JS 템플릿
 html_template = """
 <!DOCTYPE html>
 <html>
@@ -286,7 +285,6 @@ html_template = """
     const chart = echarts.init(document.getElementById('chart'), 'dark');
     const savedPos = JSON.parse(localStorage.getItem('ai_ecosystem_nodes_pos')) || {};
 
-    // 🚨 오류 수정 완료: 시간을 처리할 때 에러가 발생하지 않도록 코드를 수정했습니다!
     document.getElementById('update-time-display').innerText = '⏱️ __UPDATE_TIME__';
 
     function process(node) {
@@ -326,3 +324,126 @@ html_template = """
             return `
                 <div style="font-weight:bold; border-bottom: 1px solid #475569; padding-bottom: 4px; margin-bottom: 4px; font-size: 13px;">${title}</div>
                 <div style="color: ${color}; font-size: 14px; font-weight: bold;">${pStr} <span style="font-size: 11px;">(${cStr})</span></div>
+                <div style="font-size: 10px; color: #94a3b8; margin-top: 4px;">터치하여 차트 열기 👆</div>
+            `;
+        }
+    };
+
+    let gNodes = [], gLinks = [];
+    function parseGraph(node, pId) {
+        let nData = { 
+            id: node.id, name: node.name, originalName: node.originalName || node.name, 
+            symbolSize: node.symbolSize * 1.3, itemStyle: node.itemStyle, 
+            value: node.value, rawData: node.rawData 
+        };
+        
+        if (savedPos[node.id]) {
+            nData.x = savedPos[node.id].x;
+            nData.y = savedPos[node.id].y;
+            nData.fixed = true; 
+        }
+
+        gNodes.push(nData);
+        if (pId) gLinks.push({ source: pId, target: node.id });
+        if (node.children) node.children.forEach(c => parseGraph(c, node.id));
+    }
+    parseGraph(treeData, null);
+
+    const graphOpt = {
+        tooltip: customTooltip,
+        series: [{
+            type: 'graph', layout: 'force', data: gNodes, links: gLinks, roam: true, draggable: true,
+            scaleLimit: { min: 0.1, max: 20 },
+            force: { repulsion: 1000, edgeLength: [40, 150], layoutAnimation: true }, 
+            label: { show: true, position: 'bottom', fontSize: 10, formatter: p => p.data.originalName.split('\\n')[0], color: '#f8fafc' }
+        }]
+    };
+
+    const treeOpt = {
+        tooltip: customTooltip,
+        series: [{
+            type: 'tree', data: [treeData], roam: true, initialTreeDepth: 3,
+            scaleLimit: { min: 0.1, max: 20 },
+            label: { position: 'left', backgroundColor: '#1e293b', padding: 4, borderRadius: 4, color: '#fff', fontSize: 10 },
+            leaves: { label: { position: 'right' } }
+        }]
+    };
+
+    chart.setOption(graphOpt);
+
+    function savePositions() {
+        if(chart.getOption().series[0].type !== 'graph') return;
+        const layoutData = chart.getModel().getSeriesByIndex(0).getData();
+        const posMap = JSON.parse(localStorage.getItem('ai_ecosystem_nodes_pos')) || {};
+        gNodes.forEach((n, i) => {
+            const layout = layoutData.getItemLayout(i);
+            if (layout && !isNaN(layout[0])) posMap[n.id] = { x: layout[0], y: layout[1] };
+        });
+        localStorage.setItem('ai_ecosystem_nodes_pos', JSON.stringify(posMap));
+    }
+
+    chart.on('mouseup', function() { setTimeout(savePositions, 500); });
+    setTimeout(savePositions, 2000);
+
+    let currentZoom = 1;
+    document.getElementById('zoomIn').onclick = () => { currentZoom *= 1.4; chart.setOption({ series: [{ zoom: currentZoom }] }); };
+    document.getElementById('zoomOut').onclick = () => { currentZoom /= 1.4; chart.setOption({ series: [{ zoom: currentZoom }] }); };
+    document.getElementById('resetPos').onclick = () => { localStorage.removeItem('ai_ecosystem_nodes_pos'); location.reload(); };
+
+    document.getElementById('toTree').onclick = () => { 
+        chart.clear(); chart.setOption(treeOpt); 
+        document.getElementById('toTree').className = "bg-blue-600 hover:bg-blue-500 text-white rounded shadow font-bold transition-colors"; 
+        document.getElementById('toGraph').className = "bg-slate-700 hover:bg-slate-600 text-white rounded shadow transition-colors"; 
+    };
+    document.getElementById('toGraph').onclick = () => { 
+        chart.clear(); chart.setOption(graphOpt); 
+        document.getElementById('toGraph').className = "bg-blue-600 hover:bg-blue-500 text-white rounded shadow font-bold transition-colors"; 
+        document.getElementById('toTree').className = "bg-slate-700 hover:bg-slate-600 text-white rounded shadow transition-colors"; 
+        setTimeout(savePositions, 1000);
+    };
+    
+    const modal = document.getElementById('chart-modal');
+    let stockChartInstance = null;
+
+    chart.on('click', function(params) {
+        if (params.data && params.data.rawData) openModal(params.data.rawData, params.data.originalName.split('\\n')[0], params.data.itemStyle.color);
+    });
+
+    function openModal(data, title, color) {
+        modal.classList.remove('hidden');
+        document.getElementById('modal-title').innerText = title;
+        let pStr = data.isKRW ? '₩' + Math.round(data.price).toLocaleString() : '$' + data.price.toFixed(2);
+        let cStr = data.change > 0 ? '▲ ' + data.change.toFixed(2) + '%' : (data.change < 0 ? '▼ ' + Math.abs(data.change).toFixed(2) + '%' : '- 0.00%');
+        document.getElementById('modal-price').innerText = pStr + " (" + cStr + ")";
+        document.getElementById('modal-price').style.color = color;
+
+        if (!stockChartInstance) stockChartInstance = echarts.init(document.getElementById('stock-chart'), 'dark');
+        stockChartInstance.setOption({
+            backgroundColor: 'transparent',
+            tooltip: { trigger: 'axis', confine: true, formatter: p => `${p[0].name}<br/><b>${data.isKRW ? '₩'+Math.round(p[0].value).toLocaleString() : '$'+p[0].value.toFixed(2)}</b>` },
+            grid: { left: '12%', right: '5%', bottom: '15%', top: '10%' },
+            xAxis: { type: 'category', data: data.dates, axisLabel: { color: '#94a3b8', fontSize: 10 } },
+            yAxis: { type: 'value', scale: true, splitLine: { lineStyle: { color: '#334155', type: 'dashed' } }, axisLabel: { color: '#94a3b8', fontSize: 10, formatter: v => data.isKRW ? (v/10000)+'만' : v } },
+            dataZoom: [
+                { type: 'inside', start: 80, end: 100 },
+                { type: 'slider', show: true, bottom: 0, height: 15, borderColor: '#334155', textStyle: { color: '#94a3b8', fontSize: 9 } }
+            ],
+            series: [{ type: 'line', data: data.history, smooth: true, lineStyle: { color: color, width: 2 }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: color }, { offset: 1, color: 'rgba(0,0,0,0)' }]) }, symbol: 'circle', symbolSize: 6, itemStyle: { color: color } }]
+        });
+        setTimeout(() => stockChartInstance.resize(), 100);
+    }
+
+    document.getElementById('close-modal').addEventListener('click', () => modal.classList.add('hidden'));
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
+    window.onresize = () => { chart.resize(); if (stockChartInstance && !modal.classList.contains('hidden')) stockChartInstance.resize(); };
+</script>
+</body>
+</html>
+"""
+
+final_html = html_template.replace("__LIVE_DATA__", json.dumps(stock_data)).replace("__TREE_DATA__", json.dumps(st.session_state.tree_data)).replace("__UPDATE_TIME__", fetch_time)
+components.html(final_html, height=900)
+
+if auto_refresh:
+    time.sleep(10)
+    st.rerun()
