@@ -12,7 +12,7 @@ import urllib.parse
 st.set_page_config(layout="wide", page_title="AI 실시간 생태계 맵", page_icon="📱")
 
 st.title("📱 AI 산업 실시간 주가 대시보드 (Galaxy S26 Ultra 최적화)")
-st.info("SYS_MSG: 원 위치 고정, 실시간 타이핑 검색, 자동 티커 찾기 기능이 탑재되었습니다.")
+st.info("혀니꼬")
 
 # ==========================================
 # 세션 상태(Session State) 초기화
