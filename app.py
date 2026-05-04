@@ -215,7 +215,7 @@ def get_market_data(tickers_dict):
     return results, fetch_time
 
 # 데이터 불러오기
-with st.spinner('📡 모바일 접속 중...'):
+with st.spinner('📡 증시 데이터를 연결하고 있습니다...'):
     stock_data, fetch_time = get_market_data(st.session_state.tickers_map)
 
 # 3. 시각화 HTML/JS 템플릿 (모바일 반응형 완벽 적용)
@@ -224,15 +224,13 @@ html_template = """
 <html>
 <head>
     <meta charset="UTF-8">
-    <!-- 모바일 확대 방지 및 화면 맞춤 필수 태그 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <style>
         body { margin: 0; padding: 0; background-color: #0f172a; overflow: hidden; touch-action: none; }
-        #chart { width: 100vw; height: 90vh; } /* 모바일에서는 높이를 조금 더 씁니다 */
+        #chart { width: 100vw; height: 90vh; } 
         
-        /* 모바일용 컨트롤러 레이아웃 (플렉스 랩핑으로 줄바꿈 대응) */
         .controls { 
             position: absolute; top: 10px; left: 10px; right: 10px; z-index: 10; 
             display: flex; flex-wrap: wrap; gap: 5px; 
@@ -240,16 +238,14 @@ html_template = """
         .controls button { 
             padding: 6px 10px; font-size: 11px; flex-grow: 1; text-align: center;
         }
-        .divider { display: none; } /* 좁은 모바일 화면에서는 선 숨김 */
+        .divider { display: none; } 
         
-        /* 업데이트 시간 모바일 화면 하단으로 이동 */
         .update-time { 
             position: absolute; bottom: 15px; right: 10px; z-index: 10; 
             color: #34d399; font-size: 11px; font-weight: bold; background: rgba(2,44,34,0.9); 
             padding: 6px 10px; border-radius: 6px; border: 1px solid #047857; 
         }
 
-        /* 모달 창 스크롤 및 사이즈 최적화 */
         #chart-modal .modal-content {
             max-height: 90vh;
             overflow-y: auto;
@@ -278,7 +274,6 @@ html_template = """
                 <h2 id="modal-title" class="text-xl font-bold text-white mb-1 leading-tight">기업명</h2>
                 <p id="modal-price" class="text-lg font-semibold">현재가</p>
             </div>
-            <!-- 모바일에서 차트 높이 조정 -->
             <div id="stock-chart" style="width: 100%; height: 250px;"></div>
             <p class="text-[10px] text-slate-500 mt-2 text-right">* 최근 6개월 추이 (스크롤 가능)</p>
         </div>
@@ -299,7 +294,7 @@ html_template = """
             node.rawData = d; 
             node.value = d.price; 
             
-            node.symbolSize = Math.max(25, Math.min(60, 20 + (d.volume / 2000000))); // 폰 화면에 맞게 노드 사이즈 살짝 축소
+            node.symbolSize = Math.max(25, Math.min(60, 20 + (d.volume / 2000000))); 
             let color = '#94a3b8';
             let pStr = d.isKRW ? '₩' + Math.round(d.price).toLocaleString() : '$' + d.price.toFixed(2);
             let cStr = '\\n- 0.00%';
@@ -318,11 +313,138 @@ html_template = """
 
     const customTooltip = {
         trigger: 'item', backgroundColor: 'rgba(15, 23, 42, 0.95)', borderColor: '#334155', textStyle: { color: '#f8fafc', fontSize: 12 },
-        confine: true, // ⚠️ 모바일 핵심: 툴팁이 화면 밖으로 나가지 않게 가둠
+        confine: true, 
         formatter: function (info) {
             if (!info.data || !info.data.rawData) return info.name.replace(/\\n/g, '<br/>');
             const d = info.data.rawData;
             let title = info.data.originalName.split('\\n')[0];
             let pStr = d.isKRW ? '₩' + Math.round(d.price).toLocaleString() : '$' + d.price.toFixed(2);
             let cStr = d.change > 0 ? '▲ ' + d.change.toFixed(2) + '%' : (d.change < 0 ? '▼ ' + Math.abs(d.change).toFixed(2) + '%' : '- 0.00%');
-            let color = d.change > 0 ? '#ef4444' : (d.change < 0 ? '#3b82f6' : '#94
+            let color = d.change > 0 ? '#ef4444' : (d.change < 0 ? '#3b82f6' : '#94a3b8');
+            return `
+                <div style="font-weight:bold; border-bottom: 1px solid #475569; padding-bottom: 4px; margin-bottom: 4px; font-size: 13px;">${title}</div>
+                <div style="color: ${color}; font-size: 14px; font-weight: bold;">${pStr} <span style="font-size: 11px;">(${cStr})</span></div>
+                <div style="font-size: 10px; color: #94a3b8; margin-top: 4px;">터치하여 차트 열기 👆</div>
+            `;
+        }
+    };
+
+    let gNodes = [], gLinks = [];
+    function parseGraph(node, pId) {
+        let nData = { 
+            id: node.id, name: node.name, originalName: node.originalName || node.name, 
+            symbolSize: node.symbolSize * 1.3, itemStyle: node.itemStyle, 
+            value: node.value, rawData: node.rawData 
+        };
+        
+        if (savedPos[node.id]) {
+            nData.x = savedPos[node.id].x;
+            nData.y = savedPos[node.id].y;
+            nData.fixed = true; 
+        }
+
+        gNodes.push(nData);
+        if (pId) gLinks.push({ source: pId, target: node.id });
+        if (node.children) node.children.forEach(c => parseGraph(c, node.id));
+    }
+    parseGraph(treeData, null);
+
+    const graphOpt = {
+        tooltip: customTooltip,
+        series: [{
+            type: 'graph', layout: 'force', data: gNodes, links: gLinks, roam: true, draggable: true,
+            scaleLimit: { min: 0.1, max: 20 },
+            force: { repulsion: 1000, edgeLength: [40, 150], layoutAnimation: true }, 
+            label: { show: true, position: 'bottom', fontSize: 10, formatter: p => p.data.originalName.split('\\n')[0], color: '#f8fafc' }
+        }]
+    };
+
+    const treeOpt = {
+        tooltip: customTooltip,
+        series: [{
+            type: 'tree', data: [treeData], roam: true, initialTreeDepth: 3,
+            scaleLimit: { min: 0.1, max: 20 },
+            label: { position: 'left', backgroundColor: '#1e293b', padding: 4, borderRadius: 4, color: '#fff', fontSize: 10 },
+            leaves: { label: { position: 'right' } }
+        }]
+    };
+
+    chart.setOption(graphOpt);
+
+    function savePositions() {
+        if(chart.getOption().series[0].type !== 'graph') return;
+        const layoutData = chart.getModel().getSeriesByIndex(0).getData();
+        const posMap = JSON.parse(localStorage.getItem('ai_ecosystem_nodes_pos')) || {};
+        gNodes.forEach((n, i) => {
+            const layout = layoutData.getItemLayout(i);
+            if (layout && !isNaN(layout[0])) posMap[n.id] = { x: layout[0], y: layout[1] };
+        });
+        localStorage.setItem('ai_ecosystem_nodes_pos', JSON.stringify(posMap));
+    }
+
+    chart.on('mouseup', function() { setTimeout(savePositions, 500); });
+    setTimeout(savePositions, 2000);
+
+    let currentZoom = 1;
+    document.getElementById('zoomIn').onclick = () => { currentZoom *= 1.4; chart.setOption({ series: [{ zoom: currentZoom }] }); };
+    document.getElementById('zoomOut').onclick = () => { currentZoom /= 1.4; chart.setOption({ series: [{ zoom: currentZoom }] }); };
+    document.getElementById('resetPos').onclick = () => { localStorage.removeItem('ai_ecosystem_nodes_pos'); location.reload(); };
+
+    document.getElementById('toTree').onclick = () => { 
+        chart.clear(); chart.setOption(treeOpt); 
+        document.getElementById('toTree').className = "bg-blue-600 hover:bg-blue-500 text-white rounded shadow font-bold transition-colors"; 
+        document.getElementById('toGraph').className = "bg-slate-700 hover:bg-slate-600 text-white rounded shadow transition-colors"; 
+    };
+    document.getElementById('toGraph').onclick = () => { 
+        chart.clear(); chart.setOption(graphOpt); 
+        document.getElementById('toGraph').className = "bg-blue-600 hover:bg-blue-500 text-white rounded shadow font-bold transition-colors"; 
+        document.getElementById('toTree').className = "bg-slate-700 hover:bg-slate-600 text-white rounded shadow transition-colors"; 
+        setTimeout(savePositions, 1000);
+    };
+    
+    const modal = document.getElementById('chart-modal');
+    let stockChartInstance = null;
+
+    chart.on('click', function(params) {
+        if (params.data && params.data.rawData) openModal(params.data.rawData, params.data.originalName.split('\\n')[0], params.data.itemStyle.color);
+    });
+
+    function openModal(data, title, color) {
+        modal.classList.remove('hidden');
+        document.getElementById('modal-title').innerText = title;
+        let pStr = data.isKRW ? '₩' + Math.round(data.price).toLocaleString() : '$' + data.price.toFixed(2);
+        let cStr = data.change > 0 ? '▲ ' + data.change.toFixed(2) + '%' : (data.change < 0 ? '▼ ' + Math.abs(data.change).toFixed(2) + '%' : '- 0.00%');
+        document.getElementById('modal-price').innerText = pStr + " (" + cStr + ")";
+        document.getElementById('modal-price').style.color = color;
+
+        if (!stockChartInstance) stockChartInstance = echarts.init(document.getElementById('stock-chart'), 'dark');
+        stockChartInstance.setOption({
+            backgroundColor: 'transparent',
+            tooltip: { trigger: 'axis', confine: true, formatter: p => `${p[0].name}<br/><b>${data.isKRW ? '₩'+Math.round(p[0].value).toLocaleString() : '$'+p[0].value.toFixed(2)}</b>` },
+            grid: { left: '12%', right: '5%', bottom: '15%', top: '10%' },
+            xAxis: { type: 'category', data: data.dates, axisLabel: { color: '#94a3b8', fontSize: 10 } },
+            yAxis: { type: 'value', scale: true, splitLine: { lineStyle: { color: '#334155', type: 'dashed' } }, axisLabel: { color: '#94a3b8', fontSize: 10, formatter: v => data.isKRW ? (v/10000)+'만' : v } },
+            dataZoom: [
+                { type: 'inside', start: 80, end: 100 },
+                { type: 'slider', show: true, bottom: 0, height: 15, borderColor: '#334155', textStyle: { color: '#94a3b8', fontSize: 9 } }
+            ],
+            series: [{ type: 'line', data: data.history, smooth: true, lineStyle: { color: color, width: 2 }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: color }, { offset: 1, color: 'rgba(0,0,0,0)' }]) }, symbol: 'circle', symbolSize: 6, itemStyle: { color: color } }]
+        });
+        setTimeout(() => stockChartInstance.resize(), 100);
+    }
+
+    document.getElementById('close-modal').addEventListener('click', () => modal.classList.add('hidden'));
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
+    window.onresize = () => { chart.resize(); if (stockChartInstance && !modal.classList.contains('hidden')) stockChartInstance.resize(); };
+</script>
+</body>
+</html>
+"""
+
+# 모바일 화면을 위해 세로 길이를 넉넉하게 900px로 잡습니다
+final_html = html_template.replace("__LIVE_DATA__", json.dumps(stock_data)).replace("__TREE_DATA__", json.dumps(st.session_state.tree_data)).replace("__UPDATE_TIME__", fetch_time)
+st.components.v1.html(final_html, height=900)
+
+if auto_refresh:
+    time.sleep(10)
+    st.rerun()
