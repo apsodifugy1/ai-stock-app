@@ -8,180 +8,154 @@ import time
 import urllib.request
 import urllib.parse
 
-# 1. 앱 페이지 설정 (Galaxy S26 Ultra 최적화)
-st.set_page_config(layout="wide", page_title="AI 실시간 생태계 맵", page_icon="📱")
+# 1. 앱 페이지 설정 (모바일 및 데스크탑 최적화)
+st.set_page_config(layout="wide", page_title="AI 실시간 생태계 맵 V5.5", page_icon="📱")
 
-# CSS 커스텀: 경고창 및 기본 UI 정돈
+# CSS 커스텀: 프리미엄 다크 UI 및 반응형 정돈
 st.markdown("""
     <style>
     .stAlert { background-color: #1e293b; border: 1px solid #334155; color: #f8fafc; }
-    div[data-testid="stSidebar"] { background-color: #0f172a; }
-    /* 검색 버튼과 입력창 정렬 */
-    .stButton button { margin-top: 2px; }
+    div[data-testid="stSidebar"] { background-color: #0f172a; padding-top: 2rem; }
+    .stButton button { margin-top: 2px; font-weight: bold; border-radius: 8px; border: 1px solid #334155; width: 100%; }
+    .stTextInput input { background-color: #1e293b; color: white; border-radius: 8px; border: 1px solid #334155; }
+    .stSelectbox div[data-baseweb="select"] { background-color: #1e293b; color: white; border-radius: 8px; }
+    .main { background-color: #0f172a; }
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
     </style>
 """, unsafe_allow_html=True)
 
-st.title("📱 AI 산업 실시간 주가 대시보드 (V5.1)")
-st.info("SYS_MSG: [에너지/전력망] 및 [기업용 SSD] 섹션 통합 완료. 모든 기능이 정상 작동 중입니다.")
+st.title("📱 AI 산업 실시간 주가 지휘소 (V5.5)")
+st.info("NOTICE: 장비 섹터(AMAT, ASML) 및 에너지망 동기화 완료. 모든 가격은 실시간 서버 기준입니다.")
 
 # ==========================================
-# 세션 상태(Session State) 초기화 (토론 내용 반영)
+# 2. 세션 상태(Session State) 및 데이터 초기화
 # ==========================================
 if 'tickers_map' not in st.session_state:
     st.session_state.tickers_map = {
+        # 에이전트 & 서비스
         'Google (Gemini)': 'GOOGL', 'Palantir (PLTR)': 'PLTR', 'Salesforce (CRM)': 'CRM',
-        'Microsoft (MSFT)': 'MSFT', 'Amazon (AMZN)': 'AMZN', 'Oracle (ORCL)': 'ORCL',
-        'NVIDIA (NVDA)': 'NVDA', 'AMD (AMD)': 'AMD', 'Intel (INTC)': 'INTC', 
-        'TSMC (TSM)': 'TSM', 'SK하이닉스 (000660)': '000660.KS', '삼성전자 (005930)': '005930.KS',
-        'Western Digital (SSD)': 'WDC', 'ASML (ASML)': 'ASML', 
-        '한미반도체 (042700)': '042700.KS', 'Coherent (COHR)': 'COHR', 
-        'Lumentum (LITE)': 'LITE', 'Arista (ANET)': 'ANET', 'Vertiv (VRT)': 'VRT',
-        'Apple (AAPL)': 'AAPL', 'Qualcomm (QCOM)': 'QCOM', 'ARM (ARM)': 'ARM',
-        'HD현대일렉트릭': '267260.KS', 'LS ELECTRIC': '010120.KS', 
-        'Constellation Energy': 'CEG', 'Eaton (ETN)': 'ETN'
+        # 클라우드 플랫폼 (지주)
+        'Microsoft (MSFT)': 'MSFT', 'Amazon (AMZN)': 'AMZN', 'Google Cloud': 'GOOGL', 'Oracle (ORCL)': 'ORCL',
+        # 하드웨어 & 제조
+        'NVIDIA (NVDA)': 'NVDA', 'AMD (AMD)': 'AMD', 'TSMC (TSM)': 'TSM',
+        'SK하이닉스': '000660.KS', '삼성전자': '005930.KS', 'Western Digital (SSD)': 'WDC',
+        # 장비 & 설계 도구 (핵심 보강)
+        'AMAT (증착/식각)': 'AMAT', 'ASML (EUV)': 'ASML', 'KLA (검사)': 'KLAC', 'Synopsys (EDA)': 'SNPS', '한미반도체': '042700.KS',
+        # 네트워킹 & 인프라
+        'Coherent (COHR)': 'COHR', 'Arista (ANET)': 'ANET', 'Vertiv (VRT)': 'VRT',
+        # 에너지 & 전력망
+        'Eaton (ETN)': 'ETN', 'HD현대일렉트릭': '267260.KS', 'LS ELECTRIC': '010120.KS', 'Constellation Energy': 'CEG'
     }
 
 if 'tree_data' not in st.session_state:
     st.session_state.tree_data = {
         "name": "AI 가치사슬 생태계", "itemStyle": {"color": "#0f766e"},
         "children": [
-            {"name": "1. 파운데이션 & 에이전트", "itemStyle": {"color": "#10b981"}, "children": [{"originalName": "Google (Gemini)", "value": 1}, {"originalName": "OpenAI (ChatGPT)\n*비상장", "value": 0}, {"name": "에이전트 AI", "itemStyle": {"color": "#34d399"}, "children": [{"originalName": "Palantir (PLTR)", "value": 1}, {"originalName": "Salesforce (CRM)", "value": 1}]}]},
-            {"name": "2. 클라우드 플랫폼", "itemStyle": {"color": "#0891b2"}, "children": [{"originalName": "Microsoft (MSFT)", "value": 1}, {"originalName": "Amazon (AMZN)", "value": 1}, {"originalName": "Oracle (ORCL)", "value": 1}]},
-            {"name": "3. 하드웨어 & 제조", "itemStyle": {"color": "#6366f1"}, "children": [{"name": "AI 가속기", "itemStyle": {"color": "#818cf8"}, "children": [{"originalName": "NVIDIA (NVDA)", "value": 1}, {"originalName": "AMD (AMD)", "value": 1}, {"originalName": "Intel (INTC)", "value": 1}]}, {"name": "메모리 & SSD", "itemStyle": {"color": "#a855f7"}, "children": [{"originalName": "TSMC (TSM)", "value": 1}, {"originalName": "SK하이닉스 (000660)", "value": 1}, {"originalName": "삼성전자 (005930)", "value": 1}, {"originalName": "Western Digital (SSD)", "value": 1}]}]},
-            {"name": "4. 장비 & 설계 도구", "itemStyle": {"color": "#8b5cf6"}, "children": [{"originalName": "ASML (ASML)", "value": 1}, {"originalName": "한미반도체 (042700)", "value": 1}]},
-            {"name": "5. 네트워킹 & 인프라", "itemStyle": {"color": "#f59e0b"}, "children": [{"name": "광통신 & 스위치", "itemStyle": {"color": "#fbbf24"}, "children": [{"originalName": "Coherent (COHR)", "value": 1}, {"originalName": "Lumentum (LITE)", "value": 1}, {"originalName": "Arista (ANET)", "value": 1}]}, {"name": "전력/냉각", "itemStyle": {"color": "#f97316"}, "children": [ {"originalName": "Vertiv (VRT)", "value": 1} ]}]},
-            {
-                "name": "6. 에너지 & 전력망", "itemStyle": {"color": "#ef4444"},
-                "children": [
-                    {"originalName": "Eaton (ETN)", "value": 1},
-                    {"originalName": "HD현대일렉트릭", "value": 1},
-                    {"originalName": "LS ELECTRIC", "value": 1},
-                    {"originalName": "Constellation Energy", "value": 1}
-                ]
-            }
+            {"name": "1. 파운데이션 & 에이전트", "itemStyle": {"color": "#10b981"}, "children": [{"originalName": "Google (Gemini)", "value": 1}, {"name": "에이전트 AI", "children": [{"originalName": "Palantir (PLTR)", "value": 1}, {"originalName": "Salesforce (CRM)", "value": 1}]}]},
+            {"name": "2. 클라우드 플랫폼", "itemStyle": {"color": "#0891b2"}, "children": [{"originalName": "Microsoft (MSFT)", "value": 1}, {"originalName": "Amazon (AMZN)", "value": 1}, {"originalName": "Google Cloud", "value": 1}, {"originalName": "Oracle (ORCL)", "value": 1}]},
+            {"name": "3. 하드웨어 & 제조", "itemStyle": {"color": "#6366f1"}, "children": [{"name": "가속기/메모리", "children": [{"originalName": "NVIDIA (NVDA)", "value": 1}, {"originalName": "TSMC (TSM)", "value": 1}, {"originalName": "SK하이닉스", "value": 1}, {"originalName": "삼성전자", "value": 1}]}, {"originalName": "Western Digital (SSD)", "value": 1}]},
+            {"name": "4. 장비 & 설계 도구", "itemStyle": {"color": "#8b5cf6"}, "children": [{"originalName": "AMAT (증착/식각)", "value": 1}, {"originalName": "ASML (EUV)", "value": 1}, {"originalName": "KLA (검사)", "value": 1}, {"originalName": "Synopsys (EDA)", "value": 1}, {"originalName": "한미반도체", "value": 1}]},
+            {"name": "5. 네트워킹 & 인프라", "itemStyle": {"color": "#f59e0b"}, "children": [{"originalName": "Coherent (COHR)", "value": 1}, {"originalName": "Arista (ANET)", "value": 1}, {"originalName": "Vertiv (VRT)", "value": 1}]},
+            {"name": "6. 에너지 & 전력망", "itemStyle": {"color": "#ef4444"}, "children": [{"originalName": "Eaton (ETN)", "value": 1}, {"originalName": "HD현대일렉트릭", "value": 1}, {"originalName": "LS ELECTRIC", "value": 1}, {"originalName": "Constellation Energy", "value": 1}]}
         ]
     }
 
-# 트리 노드 관련 유틸리티
+# 트리 관리 유틸리티
 def get_all_node_names(node, names_list):
     name = node.get("originalName", node.get("name", ""))
-    display_name = name.split('\n')[0]
-    names_list.append(display_name)
-    for child in node.get("children", []):
-        get_all_node_names(child, names_list)
+    names_list.append(name.split('\n')[0])
+    if "children" in node:
+        for child in node["children"]: get_all_node_names(child, names_list)
 
-def add_child_to_node(node, parent_display_name, new_child):
-    current_name = node.get("originalName", node.get("name", "")).split('\n')[0]
-    if current_name == parent_display_name:
+def add_child_to_node(node, parent_name, new_child):
+    if node.get("originalName", node.get("name", "")).split('\n')[0] == parent_name:
         if "children" not in node: node["children"] = []
         node["children"].append(new_child)
         return True
-    for child in node.get("children", []):
-        if add_child_to_node(child, parent_display_name, new_child): return True
+    if "children" in node:
+        for child in node["children"]:
+            if add_child_to_node(child, parent_name, new_child): return True
     return False
 
-# 사이드바 (지능형 티커 검색 엔진 강화)
+# ==========================================
+# 3. 사이드바 제어판
+# ==========================================
 with st.sidebar:
-    st.header("⚙️ 터미널 모니터링 설정")
+    st.header("⚙️ 전략 단말기")
     auto_refresh = st.checkbox("🔄 자동 새로고침 (10s)", value=False)
     st.divider()
     
-    st.header("➕ 새 항목 추가")
+    st.header("➕ 신규 자산 배치")
     all_nodes = []
     get_all_node_names(st.session_state.tree_data, all_nodes)
-    parent_node_name = st.selectbox("상위 항목 선택", all_nodes)
+    parent_select = st.selectbox("상위 섹터", sorted(list(set(all_nodes))))
     
-    if 'found_ticker' not in st.session_state:
-        st.session_state.found_ticker = ""
-
-    new_node_name = st.text_input("기업명 또는 그룹명", placeholder="예: Tesla, 삼성전자")
+    if 'found_ticker' not in st.session_state: st.session_state.found_ticker = ""
+    new_name = st.text_input("기업 이름")
     
     col1, col2 = st.columns([6, 4])
-    with col1:
-        ticker_input = st.text_input("주식 티커", value=st.session_state.found_ticker, placeholder="티커 또는 기업명")
+    with col1: ticker_val = st.text_input("티커", value=st.session_state.found_ticker)
     with col2:
         st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-        if st.button("🔍 티커 찾기", use_container_width=True):
-            search_query = new_node_name.strip() if new_node_name.strip() else ticker_input.strip()
-            if search_query:
-                try:
-                    # 🚀 지능형 검색 보강: Eaton 등 특수 종목을 위해 'Stock' 키워드 추가
-                    encoded_query = urllib.parse.quote(search_query + " Stock")
-                    search_url = f"https://query2.finance.yahoo.com/v1/finance/search?q={encoded_query}&quotesCount=5"
-                    headers = {'User-Agent': 'Mozilla/5.0'}
-                    req = urllib.request.Request(search_url, headers=headers)
-                    with urllib.request.urlopen(req, timeout=5) as response:
-                        search_data = json.loads(response.read().decode('utf-8'))
-                        if search_data.get('quotes') and len(search_data['quotes']) > 0:
-                            best_match = search_data['quotes'][0]['symbol']
-                            for quote in search_data['quotes']:
-                                if quote.get('quoteType') == 'EQUITY':
-                                    best_match = quote['symbol']
-                                    break
-                            st.session_state.found_ticker = best_match
-                            st.rerun()
-                except Exception: st.error("검색 오류")
+        if st.button("🔍 찾기"):
+            q = urllib.parse.quote((new_name if new_name else ticker_val) + " Stock")
+            try:
+                url = f"https://query2.finance.yahoo.com/v1/finance/search?q={q}&quotesCount=1"
+                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req) as res:
+                    search_res = json.loads(res.read().decode())
+                    if search_res.get('quotes'):
+                        st.session_state.found_ticker = search_res['quotes'][0]['symbol']
+                        st.rerun()
+            except: st.error("검색 실패")
 
-    if st.button("🚀 생태계 지도에 추가", use_container_width=True):
-        if new_node_name:
-            final_ticker = ticker_input.strip()
-            is_company = bool(final_ticker)
-            new_child = {"originalName": new_node_name, "name": new_node_name, "value": 1 if is_company else 0}
-            success = add_child_to_node(st.session_state.tree_data, parent_node_name, new_child)
-            if success and is_company: 
-                st.session_state.tickers_map[new_node_name] = final_ticker.upper()
-            if success:
-                st.session_state.found_ticker = ""
-                st.success(f"'{new_node_name}' 등록 완료")
-                st.rerun()
+    if st.button("🚀 전장 배치"):
+        if new_name:
+            ticker = ticker_val.strip().upper()
+            nc = {"originalName": new_name, "name": new_name, "value": 1 if ticker else 0}
+            if add_child_to_node(st.session_state.tree_data, parent_select, nc):
+                if ticker: st.session_state.tickers_map[new_name] = ticker
+                st.session_state.found_ticker = ""; st.success("배치 완료"); st.rerun()
 
-# 2. 데이터 수집 함수 (1분봉 스나이퍼 엔진)
+# ==========================================
+# 4. 실시간 데이터 수집 엔진
+# ==========================================
 @st.cache_data(ttl=60)
-def get_market_data(tickers_dict):
-    results = {}
+def get_market_data(t_map):
+    res = {}
     kst = timezone(timedelta(hours=9))
-    fetch_time = datetime.now(kst).strftime('%H:%M:%S')
-    tickers_list = list(tickers_dict.values())
+    t_list = list(t_map.values())
     try:
-        all_data = yf.download(tickers_list, period="6mo", interval="1d", group_by='ticker', auto_adjust=True, progress=False, timeout=10)
-        live_data = yf.download(tickers_list, period="1d", interval="1m", group_by='ticker', auto_adjust=True, progress=False, timeout=10)
-    except:
-        all_data = pd.DataFrame(); live_data = pd.DataFrame()
+        h = yf.download(t_list, period="6mo", interval="1d", group_by='ticker', auto_adjust=True, progress=False)
+        l = yf.download(t_list, period="1d", interval="1m", group_by='ticker', auto_adjust=True, progress=False)
+    except: h = pd.DataFrame(); l = pd.DataFrame()
 
-    for name, ticker in tickers_dict.items():
+    for name, t in t_map.items():
         try:
-            dates = []; prices = []
-            if not all_data.empty:
-                hist = all_data[ticker].dropna() if len(tickers_list) > 1 else all_data.dropna()
-                if not hist.empty:
-                    dates = [d.strftime('%m-%d') for d in hist.index]
-                    prices = [float(p) for p in hist['Close']]
-            live_p = None
-            if not live_data.empty:
-                l_hist = live_data[ticker].dropna() if len(tickers_list) > 1 else live_data.dropna()
-                if not l_hist.empty: live_p = float(l_hist['Close'].iloc[-1])
-            if live_p is not None:
-                today_str = datetime.now(kst).strftime('%m-%d')
-                if len(prices) > 0:
-                    if dates[-1] != today_str:
-                        dates.append(f"{today_str} (Live)")
-                        prices.append(live_p)
-                    else:
-                        dates[-1] = f"{today_str} (Live)"; prices[-1] = live_p
-                else:
-                    dates = [f"{today_str} (Live)"]; prices = [live_p]
-            current = prices[-1] if len(prices) > 0 else 100.0
-            prev = prices[-2] if len(prices) > 1 else current
-            change = ((current - prev) / prev) * 100 if prev != 0 else 0.0
-            results[name] = {"price": current, "change": change, "isKRW": ".KS" in ticker or ".KQ" in ticker, "dates": dates, "history": prices}
-        except:
-            results[name] = {"price": 100.0, "change": 0.0, "isKRW": False, "dates": ["Error"], "history": [100.0]}
-    return results, fetch_time
+            df = h[t].dropna() if len(t_list) > 1 else h.dropna()
+            ld = l[t].dropna() if len(t_list) > 1 else l.dropna()
+            dates = [d.strftime('%m-%d') for d in df.index]
+            prices = [float(p) for p in df['Close']]
+            
+            if not ld.empty:
+                cp = float(ld['Close'].iloc[-1])
+                today = datetime.now(kst).strftime('%m-%d')
+                if dates[-1] != today:
+                    dates.append(today + "(L)"); prices.append(cp)
+                else: prices[-1] = cp
+                
+            curr = prices[-1]; prev = prices[-2] if len(prices) > 1 else curr
+            chg = ((curr - prev) / prev) * 100 if prev != 0 else 0
+            res[name] = {"price": curr, "change": chg, "isKRW": ".KS" in t or ".KQ" in t, "dates": dates, "history": prices}
+        except: res[name] = {"price": 0, "change": 0, "isKRW": False, "dates": [], "history": []}
+    return res, datetime.now(kst).strftime('%H:%M:%S')
 
-with st.spinner('📡 최신 데이터를 동기화 중입니다...'):
-    stock_data, fetch_time = get_market_data(st.session_state.tickers_map)
+stock_data, f_time = get_market_data(st.session_state.tickers_map)
 
-# 3. 시각화 HTML/JS
+# ==========================================
+# 5. 시각화 HTML/JS 프레임워크
+# ==========================================
 html_template = """
 <!DOCTYPE html>
 <html>
@@ -191,144 +165,112 @@ html_template = """
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <style>
-        body { margin: 0; padding: 0; background-color: #0f172a; overflow: hidden; touch-action: none; }
-        #chart { width: 100vw; height: 90vh; } 
-        .controls { position: absolute; top: 10px; left: 10px; right: 10px; z-index: 10; display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
-        .live-search-input { flex-grow: 2; padding: 8px 10px; font-size: 13px; background-color: #1e293b; color: #f8fafc; border: 1px solid #475569; border-radius: 6px; outline: none; }
-        .controls button { padding: 8px 10px; font-size: 12px; flex-grow: 1; text-align: center; }
-        .update-time { position: absolute; bottom: 15px; right: 10px; z-index: 10; color: #34d399; font-size: 11px; font-weight: bold; background: rgba(2,44,34,0.9); padding: 6px 10px; border-radius: 6px; border: 1px solid #047857; }
+        body { margin: 0; background-color: #0f172a; overflow: hidden; font-family: sans-serif; touch-action: none; }
+        #chart { width: 100vw; height: 92vh; }
+        .controls { position: absolute; top: 10px; left: 10px; right: 10px; z-index: 10; display: flex; gap: 8px; }
+        .search-bar { flex-grow: 1; padding: 12px; border-radius: 12px; background: #1e293b; color: white; border: 1px solid #334155; outline: none; font-size: 14px; }
+        .update-time { position: absolute; bottom: 15px; right: 15px; color: #10b981; font-size: 11px; font-weight: bold; background: rgba(15,23,42,0.8); padding: 5px 10px; border-radius: 6px; }
     </style>
 </head>
 <body>
-    <div class="controls">
-        <input type="text" id="liveSearch" class="live-search-input w-full md:w-auto mb-1" placeholder="🔍 실시간 종목 검색">
-        <button id="centerGraph" class="bg-blue-600 hover:bg-blue-500 text-white rounded shadow font-bold w-full md:w-auto">🎯 중앙</button>
-        <button id="resetPos" class="bg-slate-700 hover:bg-slate-600 text-white rounded shadow w-full md:w-auto">🔄 초기화</button>
-    </div>
-    <div class="update-time" id="update-time-display">⏱️ 연동 중...</div>
+    <div class="controls"><input type="text" id="searchInput" class="search-bar" placeholder="🔍 자산 실시간 검색 (예: AMAT, 삼전)"></div>
+    <div class="update-time" id="time-display">⏱️ __TIME__</div>
     <div id="chart"></div>
-    <div id="chart-modal" class="fixed inset-0 bg-black/90 z-50 hidden flex items-center justify-center p-2">
-        <div class="modal-content bg-slate-800 rounded-xl shadow-2xl p-4 w-full max-w-md relative border border-slate-700">
-            <button id="close-modal" class="absolute top-2 right-2 p-2 text-slate-400 hover:text-white"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
-            <div class="mb-2 mt-2"><h2 id="modal-title" class="text-xl font-bold text-white mb-1">기업명</h2><p id="modal-price" class="text-lg font-semibold">현재가</p></div>
-            <div id="stock-chart" style="width: 100%; height: 280px;"></div>
-            <p class="text-[10px] text-slate-500 mt-2 text-right">* 하단 바를 드래그하여 줌 조절 가능</p>
+
+    <div id="modal" class="fixed inset-0 bg-black/90 hidden flex items-center justify-center p-4 z-50">
+        <div class="bg-slate-800 p-6 rounded-3xl w-full max-w-md relative border border-slate-700 shadow-2xl">
+            <button onclick="document.getElementById('modal').classList.add('hidden')" class="absolute top-4 right-4 text-slate-400 text-2xl">✕</button>
+            <h2 id="m-title" class="text-2xl font-bold text-white mb-1"></h2>
+            <p id="m-price" class="text-xl font-semibold mb-6"></p>
+            <div id="sub-chart" style="width:100%; height:300px;"></div>
         </div>
     </div>
 
 <script>
-    const liveData = __LIVE_DATA__;
-    const treeData = __TREE_DATA__;
+    const ld = __LIVE_DATA__; const td = __TREE_DATA__;
     const chart = echarts.init(document.getElementById('chart'), 'dark');
-    const savedPos = JSON.parse(localStorage.getItem('ai_ecosystem_nodes_modern')) || {};
-    const deletedNodes = JSON.parse(localStorage.getItem('ai_ecosystem_deleted_nodes')) || []; 
+    const deleted = JSON.parse(localStorage.getItem('ai_del_v5')) || [];
 
-    document.getElementById('update-time-display').innerText = '⏱️ __UPDATE_TIME__ (KST)';
-
-    function filterDeletedNodes(node) {
+    function filter(node) {
         if (node.children) {
-            node.children = node.children.filter(c => !deletedNodes.includes(c.originalName || c.name));
-            node.children.forEach(filterDeletedNodes);
+            node.children = node.children.filter(c => !deleted.includes(c.originalName || c.name));
+            node.children.forEach(filter);
         }
     }
-    filterDeletedNodes(treeData);
+    filter(td);
 
-    function process(node) {
-        node.originalName = node.originalName || node.name;
-        node.id = node.originalName;
-        if (node.value !== undefined && node.value !== 0 && liveData[node.originalName]) {
-            const d = liveData[node.originalName];
-            node.rawData = d; node.value = d.price; node.symbolSize = 30; 
-            let color = '#94a3b8';
-            if (d.change >= 10) color = '#FF0000'; else if (d.change > 0) color = '#EF4444'; 
-            else if (d.change <= -10) color = '#0000FF'; else if (d.change < 0) color = '#3B82F6'; 
-            let pStr = d.isKRW ? '₩' + Math.round(d.price).toLocaleString() : '$' + d.price.toFixed(2);
-            let cStr = d.change > 0 ? '\\n▲ ' + d.change.toFixed(2) + '%' : (d.change < 0 ? '\\n▼ ' + Math.abs(d.change).toFixed(2) + '%' : '\\n- 0.00%');
-            node.name = node.originalName + '\\n' + pStr + cStr;
-            node.itemStyle = { color: color, borderColor: color };
-        } else { node.symbolSize = node.children ? 15 : 10; }
-        if (node.children) node.children.forEach(process);
+    function prep(n) {
+        n.originalName = n.originalName || n.name; n.id = n.originalName;
+        if (n.value && ld[n.id]) {
+            const d = ld[n.id]; n.raw = d; n.value = d.price;
+            let c = d.change > 0 ? '#ef4444' : (d.change < 0 ? '#3b82f6' : '#94a3b8');
+            let pS = d.isKRW ? '₩'+Math.round(d.price).toLocaleString() : '$'+d.price.toFixed(2);
+            let cS = '\\n' + (d.change > 0 ? '▲' : '▼') + Math.abs(d.change).toFixed(2) + '%';
+            n.name = n.id + '\\n' + pS + cS; n.itemStyle = { color: c }; n.symbolSize = 32;
+        } else { n.symbolSize = n.children ? 18 : 10; }
+        if (n.children) n.children.forEach(prep);
     }
-    process(treeData);
+    prep(td);
 
     let gNodes = [], gLinks = [];
-    function parseGraph(node, pId) {
-        let nData = { id: node.id, name: node.name, originalName: node.originalName, symbolSize: node.symbolSize * 1.3, itemStyle: node.itemStyle, value: node.value, rawData: node.rawData };
-        nData.originalItemStyle = { ...node.itemStyle }; nData.originalSymbolSize = nData.symbolSize;
-        if (node.label) { nData.label = { ...node.label }; nData.label.formatter = p => p.data.originalName.split('\\n')[0]; }
-        if (savedPos[node.id]) { nData.x = savedPos[node.id].x; nData.y = savedPos[node.id].y; nData.fixed = true; }
-        gNodes.push(nData); if (pId) gLinks.push({ source: pId, target: node.id });
-        if (node.children) node.children.forEach(c => parseGraph(c, node.id));
+    function parse(n, pid) {
+        let nd = { id: n.id, name: n.name, orig: n.id, symbolSize: n.symbolSize*1.3, itemStyle: n.itemStyle, raw: n.raw };
+        nd.origStyle = { ...n.itemStyle }; nd.origSize = nd.symbolSize;
+        gNodes.push(nd); if (pid) gLinks.push({ source: pid, target: n.id });
+        if (n.children) n.children.forEach(c => parse(c, n.id));
     }
-    parseGraph(treeData, null);
+    parse(td, null);
 
-    const graphOpt = {
-        series: [{ type: 'graph', layout: 'force', data: gNodes, links: gLinks, roam: true, draggable: true, force: { repulsion: 4000, edgeLength: [120, 280], gravity: 0.05, layoutAnimation: false }, label: { show: true, position: 'bottom' }, zoom: 1 }]
-    };
-    chart.setOption(graphOpt);
-
-    document.getElementById('liveSearch').addEventListener('input', function(e) {
-        const query = e.target.value.trim().toLowerCase();
-        let matchedIdx = -1;
-        gNodes.forEach((node, i) => {
-            node.itemStyle = { ...node.originalItemStyle }; node.symbolSize = node.originalSymbolSize;
-            if (query && node.originalName.toLowerCase().includes(query)) {
-                node.itemStyle = { color: '#fef08a', borderColor: '#eab308', borderWidth: 4, shadowBlur: 30, shadowColor: '#fde047' };
-                node.symbolSize = node.originalSymbolSize * 1.5; matchedIdx = i;
-            }
-        });
-        chart.setOption({ series: [{ data: gNodes }] });
-        if (matchedIdx !== -1) chart.dispatchAction({ type: 'showTip', seriesIndex: 0, dataIndex: matchedIdx });
+    chart.setOption({
+        series: [{ type: 'graph', layout: 'force', data: gNodes, links: gLinks, roam: true, draggable: true, force: { repulsion: 4000, edgeLength: [130, 260], gravity: 0.1 }, label: { show: true, position: 'bottom', fontSize: 11, color: '#f8fafc' }, zoom: 1 }]
     });
 
-    let holdTimer = null;
-    chart.on('mousedown', (p) => {
-        if (p.data && p.data.originalName) {
-            holdTimer = setTimeout(() => {
-                if (confirm(`[ ${p.data.originalName} ] 삭제하시겠습니까?`)) {
-                    let del = JSON.parse(localStorage.getItem('ai_ecosystem_deleted_nodes')) || [];
-                    del.push(p.data.originalName); localStorage.setItem('ai_ecosystem_deleted_nodes', JSON.stringify(del));
+    // 검색
+    document.getElementById('searchInput').oninput = (e) => {
+        const q = e.target.value.toLowerCase();
+        gNodes.forEach(n => {
+            if (q && n.orig.toLowerCase().includes(q)) {
+                n.itemStyle = { color: '#facc15', borderWidth: 2, borderColor: '#fff' }; n.symbolSize = n.origSize * 1.6;
+            } else { n.itemStyle = n.origStyle; n.symbolSize = n.origSize; }
+        });
+        chart.setOption({ series: [{ data: gNodes }] });
+    };
+
+    // 상세 팝업
+    chart.on('click', (pa) => {
+        if (pa.data && pa.data.raw) {
+            const d = pa.data.raw; document.getElementById('modal').classList.remove('hidden');
+            document.getElementById('m-title').innerText = pa.data.orig;
+            document.getElementById('m-price').innerText = (d.isKRW ? '₩'+Math.round(d.price).toLocaleString() : '$'+d.price.toFixed(2)) + " (" + d.change.toFixed(2) + "%)";
+            document.getElementById('m-price').style.color = d.change >= 0 ? '#ef4444' : '#3b82f6';
+            let sc = echarts.init(document.getElementById('sub-chart'), 'dark');
+            sc.setOption({
+                grid: { left: '15%', right: '5%', bottom: '15%', top: '10%' },
+                dataZoom: [{ type: 'inside' }, { type: 'slider', height: 20 }],
+                xAxis: { type: 'category', data: d.dates }, yAxis: { scale: true },
+                series: [{ type: 'line', data: d.history, smooth: true, lineStyle: { color: '#facc15' }, symbol: 'none' }]
+            });
+        }
+    });
+
+    // 삭제 (3초)
+    let h;
+    chart.on('mousedown', (pa) => {
+        if (pa.data && pa.data.orig) {
+            h = setTimeout(() => {
+                if (confirm(pa.data.orig + " 삭제?")) {
+                    deleted.push(pa.data.orig); localStorage.setItem('ai_del_v5', JSON.stringify(deleted));
                     location.reload();
                 }
             }, 3000);
         }
     });
-    chart.on('mouseup', () => clearTimeout(holdTimer));
-
-    document.getElementById('centerGraph').onclick = () => chart.setOption({ series: [{ center: null, zoom: 1 }] });
-    document.getElementById('resetPos').onclick = () => { localStorage.removeItem('ai_ecosystem_nodes_modern'); localStorage.removeItem('ai_ecosystem_deleted_nodes'); location.reload(); };
-
-    chart.on('click', (p) => {
-        if (p.data && p.data.rawData) {
-            const d = p.data.rawData; document.getElementById('chart-modal').classList.remove('hidden');
-            document.getElementById('modal-title').innerText = p.data.originalName;
-            let cStr = d.change > 0 ? '▲ ' + d.change.toFixed(2) + '%' : (d.change < 0 ? '▼ ' + Math.abs(d.change).toFixed(2) + '%' : '0.00%');
-            document.getElementById('modal-price').innerText = (d.isKRW ? '₩' + Math.round(d.price).toLocaleString() : '$' + d.price.toFixed(2)) + " (" + cStr + ")";
-            document.getElementById('modal-price').style.color = p.data.itemStyle.color;
-            let sc = echarts.init(document.getElementById('stock-chart'), 'dark');
-            sc.setOption({ 
-                backgroundColor: 'transparent', 
-                grid: { left: '15%', right: '5%', bottom: '15%', top: '10%' },
-                tooltip: { trigger: 'axis' },
-                dataZoom: [{ type: 'inside' }, { type: 'slider', height: 20 }],
-                xAxis: { type: 'category', data: d.dates }, 
-                yAxis: { type: 'value', scale: true }, 
-                series: [{ type: 'line', data: d.history, smooth: true, lineStyle: { color: p.data.itemStyle.color }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: p.data.itemStyle.color }, { offset: 1, color: 'transparent' }]) }, symbol: 'none' }] 
-            });
-            setTimeout(() => sc.resize(), 100);
-        }
-    });
-    document.getElementById('close-modal').onclick = () => document.getElementById('chart-modal').classList.add('hidden');
+    chart.on('mouseup', () => clearTimeout(h));
     window.onresize = () => chart.resize();
 </script>
 </body>
 </html>
 """
+components.html(html_template.replace("__LIVE_DATA__", json.dumps(stock_data)).replace("__TREE_DATA__", json.dumps(st.session_state.tree_data)).replace("__TIME__", f_time), height=900)
 
-components.html(html_template.replace("__LIVE_DATA__", json.dumps(stock_data))
-                .replace("__TREE_DATA__", json.dumps(st.session_state.tree_data))
-                .replace("__UPDATE_TIME__", fetch_time), height=900)
-
-if auto_refresh:
-    time.sleep(10)
-    st.rerun()
+if auto_refresh: time.sleep(10); st.rerun()
