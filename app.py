@@ -20,7 +20,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📱 AI 산업 실시간 주가 대시보드 (Galaxy S26 Ultra 최적화)")
-st.info("SYS_MSG: 시스템 엔진 업데이트 완료. 최신 버전(v2.5)이 구동 중입니다.")
+st.info("SYS_MSG: 시스템 엔진 복구 완료. 모든 통신 라인이 정상 가동 중입니다.")
 
 # ==========================================
 # 세션 상태(Session State) 초기화
@@ -130,7 +130,7 @@ def add_child_to_node(node, parent_display_name, new_child):
         if add_child_to_node(child, parent_display_name, new_child): return True
     return False
 
-# 사이드바 (티커 검색 엔진 강화 버전)
+# 사이드바 (자동 티커 검색 엔진 강화 버전)
 with st.sidebar:
     st.header("⚙️ 터미널 모니터링 설정")
     auto_refresh = st.checkbox("🔄 자동 새로고침 (10s)", value=False)
@@ -154,19 +154,13 @@ with st.sidebar:
         if st.button("🔍 티커 찾기", use_container_width=True):
             if new_node_name:
                 try:
-                    # 야후 파이낸스 검색 API - 강력한 헤더 포함
                     encoded_query = urllib.parse.quote(new_node_name)
                     search_url = f"https://query2.finance.yahoo.com/v1/finance/search?q={encoded_query}&quotesCount=5"
-                    
-                    headers = {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
-                    }
+                    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'}
                     req = urllib.request.Request(search_url, headers=headers)
-                    
                     with urllib.request.urlopen(req, timeout=5) as response:
                         search_data = json.loads(response.read().decode('utf-8'))
                         if search_data.get('quotes') and len(search_data['quotes']) > 0:
-                            # 가장 적절한 티커 선정 (주식 우선)
                             best_match = search_data['quotes'][0]['symbol']
                             for quote in search_data['quotes']:
                                 if quote.get('quoteType') == 'EQUITY':
@@ -187,13 +181,11 @@ with st.sidebar:
             is_company = bool(final_ticker)
             new_child = {"originalName": new_node_name, "name": new_node_name, "value": 1 if is_company else 0}
             if not is_company: new_child["itemStyle"] = {"color": "#8b5cf6"}
-            
             success = add_child_to_node(st.session_state.tree_data, parent_node_name, new_child)
             if success and is_company: 
                 st.session_state.tickers_map[new_node_name] = final_ticker.upper()
-            
             if success:
-                st.session_state.found_ticker = "" # 초기화
+                st.session_state.found_ticker = ""
                 st.success(f"'{new_node_name}' 등록 완료")
                 st.rerun()
 
@@ -227,9 +219,170 @@ def get_market_data(tickers_dict):
             if live_price is not None:
                 today_str = datetime.now(kst).strftime('%m-%d')
                 if len(prices) > 0:
+                    # 🚨 SyntaxError 해결: 문자열 및 리스트를 정확하게 닫아줌
                     if dates[-1] != today_str:
-                        dates.append(f"{today_str} (Live)"); prices.append(live_price)
+                        dates.append(f"{today_str} (Live)")
+                        prices.append(live_price)
                     else:
-                        dates[-1] = f"{today_str} (Live)"; prices[-1] = live_price
+                        dates[-1] = f"{today_str} (Live)"
+                        prices[-1] = live_price
                 else:
-                    dates = [f"{today_str} (Live
+                    dates = [f"{today_str} (Live)"]
+                    prices = [live_price]
+
+            current = prices[-1] if len(prices) > 0 else 100.0
+            prev = prices[-2] if len(prices) > 1 else current
+            change = ((current - prev) / prev) * 100 if prev != 0 else 0.0
+            results[name] = {"price": current, "change": change, "isKRW": ".KS" in ticker or ".KQ" in ticker, "dates": dates, "history": prices}
+        except:
+            results[name] = {"price": 100.0, "change": 0.0, "isKRW": False, "dates": ["Error"], "history": [100.0]}
+    return results, fetch_time
+
+with st.spinner('📡 최신 데이터를 동기화 중입니다...'):
+    stock_data, fetch_time = get_market_data(st.session_state.tickers_map)
+
+# 3. 시각화 HTML/JS
+html_template = """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <style>
+        body { margin: 0; padding: 0; background-color: #0f172a; overflow: hidden; touch-action: none; }
+        #chart { width: 100vw; height: 90vh; } 
+        .controls { position: absolute; top: 10px; left: 10px; right: 10px; z-index: 10; display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+        .live-search-input { flex-grow: 2; padding: 8px 10px; font-size: 13px; background-color: #1e293b; color: #f8fafc; border: 1px solid #475569; border-radius: 6px; outline: none; }
+        .controls button { padding: 8px 10px; font-size: 12px; flex-grow: 1; text-align: center; }
+        .update-time { position: absolute; bottom: 15px; right: 10px; z-index: 10; color: #34d399; font-size: 11px; font-weight: bold; background: rgba(2,44,34,0.9); padding: 6px 10px; border-radius: 6px; border: 1px solid #047857; }
+        #chart-modal .modal-content { max-height: 90vh; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <input type="text" id="liveSearch" class="live-search-input w-full md:w-auto mb-1" placeholder="🔍 실시간 종목 검색">
+        <button id="centerGraph" class="bg-blue-600 hover:bg-blue-500 text-white rounded shadow font-bold w-full md:w-auto">🎯 중앙</button>
+        <button id="resetPos" class="bg-slate-700 hover:bg-slate-600 text-white rounded shadow w-full md:w-auto">🔄 초기화</button>
+    </div>
+    <div class="update-time" id="update-time-display">⏱️ 연동 중...</div>
+    <div id="chart"></div>
+    <div id="chart-modal" class="fixed inset-0 bg-black/90 z-50 hidden flex items-center justify-center p-2">
+        <div class="modal-content bg-slate-800 rounded-xl shadow-2xl p-4 w-full max-w-md relative border border-slate-700">
+            <button id="close-modal" class="absolute top-2 right-2 p-2 text-slate-400 hover:text-white"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+            <div class="mb-2 mt-2"><h2 id="modal-title" class="text-xl font-bold text-white mb-1">기업명</h2><p id="modal-price" class="text-lg font-semibold">현재가</p></div>
+            <div id="stock-chart" style="width: 100%; height: 250px;"></div>
+        </div>
+    </div>
+
+<script>
+    const liveData = __LIVE_DATA__;
+    const treeData = __TREE_DATA__;
+    const chart = echarts.init(document.getElementById('chart'), 'dark');
+    const savedPos = JSON.parse(localStorage.getItem('ai_ecosystem_nodes_modern')) || {};
+    const deletedNodes = JSON.parse(localStorage.getItem('ai_ecosystem_deleted_nodes')) || []; 
+
+    document.getElementById('update-time-display').innerText = '⏱️ __UPDATE_TIME__ (KST)';
+
+    function filterDeletedNodes(node) {
+        if (node.children) {
+            node.children = node.children.filter(c => !deletedNodes.includes(c.originalName || c.name));
+            node.children.forEach(filterDeletedNodes);
+        }
+    }
+    filterDeletedNodes(treeData);
+
+    function process(node) {
+        node.originalName = node.originalName || node.name;
+        node.id = node.originalName;
+        if (node.value !== undefined && node.value !== 0 && liveData[node.originalName]) {
+            const d = liveData[node.originalName];
+            node.rawData = d; node.value = d.price; node.symbolSize = 30; 
+            let color = '#94a3b8';
+            if (d.change >= 10) color = '#FF0000'; else if (d.change > 0) color = '#EF4444'; 
+            else if (d.change <= -10) color = '#0000FF'; else if (d.change < 0) color = '#3B82F6'; 
+            let pStr = d.isKRW ? '₩' + Math.round(d.price).toLocaleString() : '$' + d.price.toFixed(2);
+            let cStr = d.change > 0 ? '\\n▲ ' + d.change.toFixed(2) + '%' : (d.change < 0 ? '\\n▼ ' + Math.abs(d.change).toFixed(2) + '%' : '\\n- 0.00%');
+            node.name = node.originalName + '\\n' + pStr + cStr;
+            node.itemStyle = { color: color, borderColor: color };
+            node.label = { color: '#f8fafc', fontSize: 10 };
+        } else { node.symbolSize = node.children ? 15 : 10; node.label = { color: '#f8fafc', fontSize: 10 }; }
+        if (node.children) node.children.forEach(process);
+    }
+    process(treeData);
+
+    let gNodes = [], gLinks = [];
+    function parseGraph(node, pId) {
+        let nData = { id: node.id, name: node.name, originalName: node.originalName, symbolSize: node.symbolSize * 1.3, itemStyle: node.itemStyle, value: node.value, rawData: node.rawData };
+        nData.originalItemStyle = { ...node.itemStyle }; nData.originalSymbolSize = nData.symbolSize;
+        if (node.label) { nData.label = { ...node.label }; nData.label.formatter = p => p.data.originalName.split('\\n')[0]; }
+        if (savedPos[node.id]) { nData.x = savedPos[node.id].x; nData.y = savedPos[node.id].y; nData.fixed = true; }
+        gNodes.push(nData); if (pId) gLinks.push({ source: pId, target: node.id });
+        if (node.children) node.children.forEach(c => parseGraph(c, node.id));
+    }
+    parseGraph(treeData, null);
+
+    const graphOpt = {
+        tooltip: { trigger: 'item', confine: true, backgroundColor: 'rgba(15, 23, 42, 0.95)', textStyle: { color: '#f8fafc', fontSize: 12 } },
+        series: [{ type: 'graph', layout: 'force', data: gNodes, links: gLinks, roam: true, draggable: true, force: { repulsion: 4000, edgeLength: [100, 250], gravity: 0.05, layoutAnimation: false }, label: { show: true, position: 'bottom' }, zoom: 1 }]
+    };
+    chart.setOption(graphOpt);
+
+    document.getElementById('liveSearch').addEventListener('input', function(e) {
+        const query = e.target.value.trim().toLowerCase();
+        let matchedIdx = -1;
+        gNodes.forEach((node, i) => {
+            node.itemStyle = { ...node.originalItemStyle }; node.symbolSize = node.originalSymbolSize;
+            if (query && node.originalName.toLowerCase().includes(query)) {
+                node.itemStyle = { color: '#fef08a', borderColor: '#eab308', borderWidth: 4, shadowBlur: 30, shadowColor: '#fde047' };
+                node.symbolSize = node.originalSymbolSize * 1.5; matchedIdx = i;
+            }
+        });
+        chart.setOption({ series: [{ data: gNodes }] });
+        if (matchedIdx !== -1) chart.dispatchAction({ type: 'showTip', seriesIndex: 0, dataIndex: matchedIdx });
+    });
+
+    let holdTimer = null;
+    chart.on('mousedown', (p) => {
+        if (p.data && p.data.originalName) {
+            holdTimer = setTimeout(() => {
+                if (confirm(`[ ${p.data.originalName} ] 삭제하시겠습니까?`)) {
+                    let del = JSON.parse(localStorage.getItem('ai_ecosystem_deleted_nodes')) || [];
+                    del.push(p.data.originalName); localStorage.setItem('ai_ecosystem_deleted_nodes', JSON.stringify(del));
+                    location.reload();
+                }
+            }, 3000);
+        }
+    });
+    chart.on('mouseup', () => clearTimeout(holdTimer));
+
+    document.getElementById('centerGraph').onclick = () => chart.setOption({ series: [{ center: null, zoom: 1 }] });
+    document.getElementById('resetPos').onclick = () => { localStorage.removeItem('ai_ecosystem_nodes_modern'); localStorage.removeItem('ai_ecosystem_deleted_nodes'); location.reload(); };
+
+    chart.on('click', (p) => {
+        if (p.data && p.data.rawData) {
+            const d = p.data.rawData; document.getElementById('chart-modal').classList.remove('hidden');
+            document.getElementById('modal-title').innerText = p.data.originalName;
+            let cStr = d.change > 0 ? '▲ ' + d.change.toFixed(2) + '%' : (d.change < 0 ? '▼ ' + Math.abs(d.change).toFixed(2) + '%' : '0.00%');
+            document.getElementById('modal-price').innerText = (d.isKRW ? '₩' + Math.round(d.price).toLocaleString() : '$' + d.price.toFixed(2)) + " (" + cStr + ")";
+            document.getElementById('modal-price').style.color = p.data.itemStyle.color;
+            let sc = echarts.init(document.getElementById('stock-chart'), 'dark');
+            sc.setOption({ backgroundColor: 'transparent', grid: { left: '15%', right: '5%', bottom: '15%', top: '10%' }, xAxis: { type: 'category', data: d.dates, axisLabel: { color: '#94a3b8', fontSize: 10 } }, yAxis: { type: 'value', scale: true, axisLabel: { color: '#94a3b8', fontSize: 10 } }, series: [{ type: 'line', data: d.history, smooth: true, lineStyle: { color: p.data.itemStyle.color }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: p.data.itemStyle.color }, { offset: 1, color: 'transparent' }]) }, symbol: 'none' }] });
+        }
+    });
+    document.getElementById('close-modal').onclick = () => document.getElementById('chart-modal').classList.add('hidden');
+    window.onresize = () => chart.resize();
+</script>
+</body>
+</html>
+"""
+
+# HTML 컴포넌트 호출 (최신 규약 반영)
+components.html(html_template.replace("__LIVE_DATA__", json.dumps(stock_data))
+                .replace("__TREE_DATA__", json.dumps(st.session_state.tree_data))
+                .replace("__UPDATE_TIME__", fetch_time), height=900)
+
+if auto_refresh:
+    time.sleep(10)
+    st.rerun()
