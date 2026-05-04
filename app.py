@@ -8,8 +8,8 @@ import time
 # 1. 앱 페이지 설정 (모바일 최적화)
 st.set_page_config(layout="wide", page_title="AI 실시간 생태계 맵", page_icon="📱")
 
-st.title("📱 AI 산업 실시간 주가 대시보드 (모바일 버전)")
-st.info("왼쪽 위 '〉' 버튼을 눌러 메뉴를 열고, 두 손가락으로 줌인/줌아웃 하세요.")
+st.title("📱 AI 산업 실시간 주가 대시보드 (Galaxy S26 Ultra 최적화)")
+st.info("왼쪽 위 '〉' 버튼을 눌러 메뉴를 열고, 하단의 정밀 줌 버튼을 사용해 보세요.")
 
 # ==========================================
 # 세션 상태(Session State) 초기화
@@ -218,7 +218,7 @@ def get_market_data(tickers_dict):
 with st.spinner('📡 증시 데이터를 연결하고 있습니다... (Rate Limit 회피 중)'):
     stock_data, fetch_time = get_market_data(st.session_state.tickers_map)
 
-# 3. 시각화 HTML/JS 템플릿 (침범 방지 & 줌 민감도 개선)
+# 3. 시각화 HTML/JS 템플릿 (S26 Ultra 최적화)
 html_template = """
 <!DOCTYPE html>
 <html>
@@ -236,9 +236,8 @@ html_template = """
             display: flex; flex-wrap: wrap; gap: 5px; 
         }
         .controls button { 
-            padding: 6px 10px; font-size: 11px; flex-grow: 1; text-align: center;
+            padding: 8px 10px; font-size: 12px; flex-grow: 1; text-align: center;
         }
-        .divider { display: none; } 
         
         .update-time { 
             position: absolute; bottom: 15px; right: 10px; z-index: 10; 
@@ -256,9 +255,9 @@ html_template = """
     <div class="controls">
         <button id="toGraph" class="bg-blue-600 hover:bg-blue-500 text-white rounded shadow font-bold transition-colors">🕸️ 네트워크</button>
         <button id="toTree" class="bg-slate-700 hover:bg-slate-600 text-white rounded shadow transition-colors">🌲 트리</button>
-        <button id="zoomIn" class="bg-slate-700 hover:bg-slate-600 text-white rounded shadow font-bold transition-colors">➕ 확대</button>
-        <button id="zoomOut" class="bg-slate-700 hover:bg-slate-600 text-white rounded shadow font-bold transition-colors">➖ 축소</button>
-        <button id="resetPos" class="bg-red-900 hover:bg-red-800 text-white rounded shadow transition-colors w-full mt-1">🔄 배치 초기화</button>
+        <button id="zoomIn" class="bg-slate-700 hover:bg-slate-600 text-white rounded shadow font-bold transition-colors">➕ 초정밀 확대</button>
+        <button id="zoomOut" class="bg-slate-700 hover:bg-slate-600 text-white rounded shadow font-bold transition-colors">➖ 초정밀 축소</button>
+        <button id="resetPos" class="bg-red-900 hover:bg-red-800 text-white rounded shadow transition-colors w-full mt-1">🔄 배치 초기화 (필수! 누르시면 겹침 해결)</button>
     </div>
     
     <div class="update-time" id="update-time-display">⏱️ 연동 중...</div>
@@ -294,8 +293,9 @@ html_template = """
             node.rawData = d; 
             node.value = d.price; 
             
-            // 모바일 화면에 맞게 기본 크기를 조금 줄여 겹침 방지 보조
-            node.symbolSize = Math.max(22, Math.min(55, 18 + (d.volume / 2000000))); 
+            // 🚨 노드 크기 축소: S26 울트라 화면에 맞게 원의 크기를 줄여 서로 부딪히는 범위를 좁혔습니다.
+            node.symbolSize = Math.max(20, Math.min(50, 15 + (d.volume / 3000000))); 
+            
             let color = '#94a3b8';
             let pStr = d.isKRW ? '₩' + Math.round(d.price).toLocaleString() : '$' + d.price.toFixed(2);
             let cStr = '\\n- 0.00%';
@@ -355,8 +355,8 @@ html_template = """
         series: [{
             type: 'graph', layout: 'force', data: gNodes, links: gLinks, roam: true, draggable: true,
             scaleLimit: { min: 0.1, max: 20 },
-            // 🚨 원 침범 방지 핵심 코드: 척력(repulsion)을 2500으로 올려서 강력하게 밀어내게 만듦
-            force: { repulsion: 2500, edgeLength: [60, 180], gravity: 0.1, layoutAnimation: true }, 
+            // 🚨 절대 침범 금지 코드: 척력(repulsion)을 4000으로 폭증시키고, 노드 간 거리(edgeLength)를 길게 뽑아 절대 겹치지 않게 만듦.
+            force: { repulsion: 4000, edgeLength: [80, 200], gravity: 0.05, layoutAnimation: true }, 
             label: { show: true, position: 'bottom', fontSize: 10, formatter: p => p.data.originalName.split('\\n')[0], color: '#f8fafc' }
         }]
     };
@@ -387,10 +387,12 @@ html_template = """
     chart.on('mouseup', function() { setTimeout(savePositions, 500); });
     setTimeout(savePositions, 2000);
 
-    // 🚨 줌 민감도 수정: 기존 1.4배씩 커지던 것을 1.2배씩 부드럽게 커지도록 완화
+    // 🚨 줌 민감도 1.1배 초정밀화: 터치가 민감한 최고급 기기에서 안정적으로 작동하도록 한 번 누를 때마다 10%씩만 아주 미세하게 확대/축소됩니다.
     let currentZoom = 1;
-    document.getElementById('zoomIn').onclick = () => { currentZoom *= 1.2; chart.setOption({ series: [{ zoom: currentZoom }] }); };
-    document.getElementById('zoomOut').onclick = () => { currentZoom /= 1.2; chart.setOption({ series: [{ zoom: currentZoom }] }); };
+    document.getElementById('zoomIn').onclick = () => { currentZoom *= 1.1; chart.setOption({ series: [{ zoom: currentZoom }] }); };
+    document.getElementById('zoomOut').onclick = () => { currentZoom /= 1.1; chart.setOption({ series: [{ zoom: currentZoom }] }); };
+    
+    // 이 버튼을 눌러야 과거에 겹쳐서 저장된 위치가 날아가고, 새로운 4000 척력 엔진이 발동합니다.
     document.getElementById('resetPos').onclick = () => { localStorage.removeItem('ai_ecosystem_nodes_pos'); location.reload(); };
 
     document.getElementById('toTree').onclick = () => { 
