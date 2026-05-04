@@ -12,7 +12,7 @@ import urllib.parse
 st.set_page_config(layout="wide", page_title="AI 실시간 생태계 맵", page_icon="📱")
 
 st.title("📱 AI 산업 실시간 주가 대시보드 (Galaxy S26 Ultra 최적화)")
-st.info("SYS_MSG: 변동률 색상 등급화 및 원 크기 통일 설정이 적용되었습니다.")
+st.info("SYS_MSG: 자동 티커 검색 엔진이 강화되었습니다. 기업 이름 입력 후 '🔍 티커 찾기'를 눌러보세요.")
 
 # ==========================================
 # 세션 상태(Session State) 초기화
@@ -104,6 +104,7 @@ if 'tree_data' not in st.session_state:
         ]
     }
 
+# 트리 노드 관련 유틸리티 함수
 def get_all_node_names(node, names_list):
     name = node.get("originalName", node.get("name", ""))
     display_name = name.split('\n')[0]
@@ -123,51 +124,83 @@ def add_child_to_node(node, parent_display_name, new_child):
             return True
     return False
 
-# 사이드바
+# 사이드바 (자동 티커 검색 로직 강화)
 with st.sidebar:
-    st.header("⚙️ 모바일 모니터링 설정")
-    auto_refresh = st.checkbox("🔄 10초마다 자동 새로고침", value=False)
+    st.header("⚙️ 터미널 모니터링 설정")
+    auto_refresh = st.checkbox("🔄 자동 새로고침 (10s)", value=False)
     st.divider()
     
     st.header("➕ 새 항목 추가")
     all_nodes = []
     get_all_node_names(st.session_state.tree_data, all_nodes)
-    parent_node_name = st.selectbox("어느 항목 아래에?", all_nodes)
-    new_node_name = st.text_input("새 항목 이름", placeholder="예: Tesla, 카카오")
+    parent_node_name = st.selectbox("상위 항목 선택", all_nodes)
     
-    c1, c2 = st.columns([7, 3])
-    with c1:
-        if 'auto_ticker' not in st.session_state: st.session_state.auto_ticker = ""
-        new_ticker = st.text_input("티커", key='auto_ticker', placeholder="비워두면 섹터로 생성")
-    with c2:
+    # 세션 상태로 티커 입력값 관리
+    if 'temp_ticker' not in st.session_state:
+        st.session_state.temp_ticker = ""
+
+    new_node_name = st.text_input("기업명 또는 그룹명", placeholder="예: Tesla, 카카오")
+    
+    col1, col2 = st.columns([6, 4])
+    with col1:
+        # value를 session_state와 연동하여 자동으로 채워지게 함
+        ticker_input = st.text_input("주식 티커", value=st.session_state.temp_ticker, placeholder="찾기 버튼 활용")
+    with col2:
         st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-        if st.button("🔍 찾기", use_container_width=True):
+        if st.button("🔍 티커 찾기", use_container_width=True):
             if new_node_name:
                 try:
-                    url = f"https://query2.finance.yahoo.com/v1/finance/search?q={urllib.parse.quote(new_node_name)}"
-                    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-                    with urllib.request.urlopen(req, timeout=3) as response:
-                        data = json.loads(response.read().decode('utf-8'))
-                        if data.get('quotes'):
-                            ticker = data['quotes'][0]['symbol']
-                            st.session_state.auto_ticker = ticker
+                    # 야후 파이낸스 검색 API 쿼리
+                    query = urllib.parse.quote(new_node_name)
+                    search_url = f"https://query2.finance.yahoo.com/v1/finance/search?q={query}"
+                    
+                    # 브라우저인 척 헤더 추가 (차단 방지)
+                    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+                    req = urllib.request.Request(search_url, headers=headers)
+                    
+                    with urllib.request.urlopen(req, timeout=5) as response:
+                        search_data = json.loads(response.read().decode('utf-8'))
+                        if search_data.get('quotes'):
+                            # 주식(EQUITY) 타입을 우선적으로 찾음
+                            best_match = None
+                            for quote in search_data['quotes']:
+                                if quote.get('quoteType') == 'EQUITY':
+                                    best_match = quote['symbol']
+                                    break
+                            
+                            if not best_match:
+                                best_match = search_data['quotes'][0]['symbol']
+                            
+                            st.session_state.temp_ticker = best_match
                             st.rerun()
-                except: st.warning("오류")
+                        else:
+                            st.warning("검색 결과가 없습니다.")
+                except Exception as e:
+                    st.error("서버 응답 지연. 직접 입력해 주세요.")
+            else:
+                st.warning("먼저 이름을 입력하세요.")
 
-    if st.button("🚀 트리에 추가하기", use_container_width=True):
+    if st.button("🚀 생태계 지도에 추가", use_container_width=True):
         if new_node_name:
-            final_ticker = st.session_state.auto_ticker.strip()
+            final_ticker = ticker_input.strip()
             is_company = bool(final_ticker)
             new_child = {"originalName": new_node_name, "name": new_node_name, "value": 1 if is_company else 0}
-            if not is_company: new_child["itemStyle"] = {"color": "#8b5cf6"}
+            if not is_company: 
+                new_child["itemStyle"] = {"color": "#8b5cf6"}
+            
             success = add_child_to_node(st.session_state.tree_data, parent_node_name, new_child)
-            if success and is_company: st.session_state.tickers_map[new_node_name] = final_ticker.upper()
+            
+            if success and is_company: 
+                st.session_state.tickers_map[new_node_name] = final_ticker.upper()
+            
             if success:
-                st.session_state.auto_ticker = ""
-                st.success("추가 완료")
+                st.session_state.temp_ticker = "" # 입력창 초기화
+                st.success(f"'{new_node_name}' 등록 완료")
                 st.rerun()
+        else:
+            st.error("이름을 입력해 주세요.")
 
-# 2. 데이터 수집 함수 (1분봉 스나이퍼)
+# 2. 데이터 수집 함수 (1분봉 스나이퍼 엔진)
 @st.cache_data(ttl=60)
 def get_market_data(tickers_dict):
     results = {}
@@ -277,15 +310,13 @@ html_template = """
             node.rawData = d; 
             node.value = d.price; 
             
-            // 🚨 크기 통일: 모든 기업 노드의 크기를 30으로 고정
             node.symbolSize = 30; 
             
-            // 🚨 색상 2단계 로직 적용
             let color = '#94a3b8';
-            if (d.change >= 10) color = '#FF0000'; // 10% 이상 폭등 (강렬한 빨강)
-            else if (d.change > 0) color = '#EF4444'; // 상승 (일반 빨강)
-            else if (d.change <= -10) color = '#0000FF'; // 10% 이상 폭락 (강렬한 파랑)
-            else if (d.change < 0) color = '#3B82F6'; // 하락 (일반 파랑)
+            if (d.change >= 10) color = '#FF0000'; 
+            else if (d.change > 0) color = '#EF4444'; 
+            else if (d.change <= -10) color = '#0000FF'; 
+            else if (d.change < 0) color = '#3B82F6'; 
             
             let pStr = d.isKRW ? '₩' + Math.round(d.price).toLocaleString() : '$' + d.price.toFixed(2);
             let cStr = d.change > 0 ? '\\n▲ ' + d.change.toFixed(2) + '%' : (d.change < 0 ? '\\n▼ ' + Math.abs(d.change).toFixed(2) + '%' : '\\n- 0.00%');
@@ -337,10 +368,11 @@ html_template = """
     let holdTimer = null;
     chart.on('mousedown', function (params) {
         if (params.data && params.data.originalName) {
+            holdTarget = params.data.originalName;
             holdTimer = setTimeout(() => {
-                if (confirm(`[ ${params.data.originalName} ] 삭제하시겠습니까?`)) {
+                if (confirm(`[ ${holdTarget} ] 삭제하시겠습니까?`)) {
                     let deleted = JSON.parse(localStorage.getItem('ai_ecosystem_deleted_nodes')) || [];
-                    deleted.push(params.data.originalName);
+                    deleted.push(holdTarget);
                     localStorage.setItem('ai_ecosystem_deleted_nodes', JSON.stringify(deleted));
                     location.reload();
                 }
