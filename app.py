@@ -103,7 +103,7 @@ if 'tree_data' not in st.session_state:
         ]
     }
 
-# 트리 노드 재귀 탐색 및 추가 함수 (복구됨!)
+# 트리 노드 재귀 탐색 및 추가 함수
 def get_all_node_names(node, names_list):
     name = node.get("originalName", node.get("name", ""))
     display_name = name.split('\n')[0]
@@ -123,7 +123,7 @@ def add_child_to_node(node, parent_display_name, new_child):
             return True
     return False
 
-# 사이드바 (종목 검색 및 추가 기능 복구)
+# 사이드바 (종목 검색 및 추가 기능)
 with st.sidebar:
     st.header("⚙️ 모바일 모니터링 설정")
     auto_refresh = st.checkbox("🔄 10초마다 자동 새로고침", value=False)
@@ -132,13 +132,13 @@ with st.sidebar:
     
     st.divider()
 
-    # 🚀 신규 기능: 종목 검색 창
+    # 🚀 신규 기능: 종목 검색 창 (부분 일치 지원)
     st.header("🔍 종목 검색 (맵에서 찾기)")
-    search_query = st.text_input("기업명 또는 티커 입력", placeholder="예: NVDA, Apple")
+    search_query = st.text_input("기업명 또는 티커 (일부분만 입력해도 됨)", placeholder="예: 하이, NVDA")
     
     st.divider()
     
-    # 🚀 복구된 기능: 항목 추가
+    # 항목 추가
     st.header("➕ 새 항목 추가")
     all_nodes = []
     get_all_node_names(st.session_state.tree_data, all_nodes)
@@ -185,7 +185,7 @@ def get_market_data(tickers_dict):
         all_data = pd.DataFrame()
 
     try:
-        # 2. [초정밀 스나이퍼] 오늘 장중의 '1분 단위(1m)' 기록 전체를 다운로드해서 절대 캐시 오류가 없게 함.
+        # 2. 오늘 장중 1분 단위 기록 전체 다운로드
         live_data = yf.download(tickers_list, period="1d", interval="1m", group_by='ticker', auto_adjust=True, progress=False, timeout=10)
     except:
         live_data = pd.DataFrame()
@@ -196,7 +196,6 @@ def get_market_data(tickers_dict):
             prices = []
             volume = 1000000
 
-            # 1. 과거 일봉 데이터 추출
             if not all_data.empty:
                 if len(tickers_list) > 1 and ticker in all_data:
                     hist = all_data[ticker].dropna()
@@ -211,7 +210,6 @@ def get_market_data(tickers_dict):
                     if 'Volume' in hist:
                         volume = float(hist['Volume'].iloc[-1])
 
-            # 2. 실시간 현재가 추출 (1분봉의 가장 마지막 체결가)
             live_price = None
             if not live_data.empty:
                 if len(tickers_list) > 1 and ticker in live_data:
@@ -222,14 +220,11 @@ def get_market_data(tickers_dict):
                     l_hist = pd.DataFrame()
                     
                 if not l_hist.empty:
-                    # 1분봉 데이터의 맨 마지막 값이 곧 지금 당장의 '진짜 체결가'입니다.
                     live_price = float(l_hist['Close'].iloc[-1])
 
-            # 실시간 가격 덮어쓰기 로직
             if live_price is not None:
                 today_str = datetime.now(kst).strftime('%m-%d')
                 if len(prices) > 0:
-                    # 일봉 마지막 날짜가 오늘이 아니거나 가격이 다르면 Live로 갱신
                     if dates[-1] != today_str and abs(prices[-1] - live_price) > 0.001:
                         dates.append(f"{today_str} (Live)")
                         prices.append(live_price)
@@ -347,9 +342,25 @@ html_template = """
             
             node.name = node.originalName + '\\n' + pStr + cStr;
             node.itemStyle = { color: color, borderColor: color };
+            node.label = { color: '#f8fafc', fontSize: 10, fontWeight: 'normal' };
         } else { 
             node.symbolSize = node.children ? 14 : 10; 
+            node.label = { color: '#f8fafc', fontSize: 10, fontWeight: 'normal' };
         }
+
+        // 🌟 부분 검색 & 하이라이트 효과 (노란색 강력한 네온사인 🌟)
+        if (searchQuery && node.originalName.toLowerCase().includes(searchQuery)) {
+            node.itemStyle = { 
+                color: '#fef08a',         // 밝은 옐로우 
+                borderColor: '#eab308',   // 짙은 옐로우 테두리
+                borderWidth: 4, 
+                shadowBlur: 30,           // 네온사인 후광 효과
+                shadowColor: '#fde047'    // 후광 색상
+            };
+            node.symbolSize = (node.symbolSize || 20) * 1.6; // 크기 1.6배 뻥튀기!
+            node.label = { color: '#fde047', fontSize: 14, fontWeight: 'bold' }; // 글씨도 노랗고 굵게!
+        }
+
         if (node.children) node.children.forEach(process);
     }
     process(treeData);
@@ -380,6 +391,12 @@ html_template = """
             value: node.value, rawData: node.rawData 
         };
         
+        // 커스텀 라벨이 지정되어 있다면 적용 (노란색 강조 폰트 포함)
+        if (node.label) {
+            nData.label = node.label;
+            nData.label.formatter = p => p.data.originalName.split('\\n')[0];
+        }
+        
         if (savedPos[node.id]) {
             nData.x = savedPos[node.id].x;
             nData.y = savedPos[node.id].y;
@@ -397,16 +414,15 @@ html_template = """
         series: [{
             type: 'graph', layout: 'force', data: gNodes, links: gLinks, roam: true, draggable: true,
             scaleLimit: { min: 0.1, max: 20 },
-            // 둥둥 떠다니기 고정 및 겹침 방지(4000) 유지
             force: { repulsion: 4000, edgeLength: [80, 200], gravity: 0.05, layoutAnimation: false }, 
-            label: { show: true, position: 'bottom', fontSize: 10, formatter: p => p.data.originalName.split('\\n')[0], color: '#f8fafc' },
+            label: { show: true, position: 'bottom' }, // 디자인은 노드별 개별 설정(nData.label)을 따름
             zoom: 1
         }]
     };
 
     chart.setOption(graphOpt);
 
-    // 🚀 종목 검색 하이라이트 로직
+    // 🚀 종목 검색 하이라이트 (툴팁 자동 오픈 기능 유지)
     if (searchQuery) {
         let matchedNode = null;
         for (let i = 0; i < gNodes.length; i++) {
@@ -417,7 +433,6 @@ html_template = """
         }
         if (matchedNode) {
             setTimeout(() => {
-                chart.dispatchAction({ type: 'highlight', name: matchedNode.name });
                 chart.dispatchAction({ type: 'showTip', name: matchedNode.name });
             }, 500);
         }
